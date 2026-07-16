@@ -33,6 +33,7 @@ export function ManagedEmailPicker({
   initialEmailId?: string | null
   onModeChange?: (mode: "new" | "existing") => void
   platformPassword?: {
+    defaultValue?: string
     label: string
     name: string
     placeholder?: string
@@ -139,6 +140,7 @@ export function ManagedEmailPicker({
                   <FieldLabel>{platformPassword.label}</FieldLabel>
                   <Input
                     autoComplete="new-password"
+                    defaultValue={platformPassword.defaultValue}
                     name={platformPassword.name}
                     placeholder={platformPassword.placeholder}
                     required={platformPassword.required}
@@ -197,6 +199,7 @@ export function ManagedEmailPicker({
                   <FieldLabel>{platformPassword.label}</FieldLabel>
                   <Input
                     autoComplete="new-password"
+                    defaultValue={platformPassword.defaultValue}
                     name={platformPassword.name}
                     placeholder={platformPassword.placeholder}
                     required={platformPassword.required}

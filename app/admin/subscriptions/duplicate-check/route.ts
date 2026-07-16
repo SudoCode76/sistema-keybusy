@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
         countryId: params.get("countryId"),
         phone: params.get("phone") ?? "",
         telegramUsername: params.get("telegramUsername"),
+        excludeSubscriptionId: params.get("excludeSubscriptionId"),
+        excludeServiceAccountId: params.get("excludeServiceAccountId"),
         productSlug: params.get("productSlug") ?? "",
         loginEmail: params.get("loginEmail"),
       })

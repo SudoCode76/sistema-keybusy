@@ -69,6 +69,8 @@ export function SubscriptionsManager({
       <CardContent>
         <SubscriptionsTable
           accounts={accounts}
+          countries={countries}
+          defaultCountryId={defaultCountryId}
           initialActiveTotal={initialActiveTotal}
           initialRows={initialRows}
           initialTotal={initialTotal}

@@ -22,10 +22,17 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDate } from "@/lib/date"
 import { money } from "@/lib/money"
 
-import type { AccountOption, ProductOption, ProviderOption } from "./sale-form"
+import type {
+  AccountOption,
+  CountryOption,
+  ProductOption,
+  ProviderOption,
+} from "./sale-form"
 
 export type SubscriptionRow = {
   id: string
+  customerId: string
+  customerCountryId: string
   customerName: string
   customerPhone: string | null
   customerPhoneE164: string | null
@@ -46,10 +53,20 @@ export type SubscriptionRow = {
   currentPriceCurrency: "BOB" | "USDT"
   currentExchangeRate: number | null
   hasPurchaseCost: boolean
+  managedEmailId: string | null
+  purchaseCost: {
+    providerId: string | null
+    amount: number
+    currency: "BOB" | "USDT"
+  } | null
   notes: string | null
   account: {
     login_email: string | null
     username: string | null
+    provider_id: string | null
+    email_address_id: string | null
+    base_cost_amount: number
+    base_cost_currency: "BOB" | "USDT"
     two_factor_url: string | null
     account_credentials?: { secret_payload: string | null } | null
     spotify_family_plans?: { invite_url: string | null; address: string | null } | null
@@ -76,6 +93,8 @@ export function SubscriptionsTable({
   accounts,
   products,
   providers,
+  countries,
+  defaultCountryId,
 }: {
   initialRows: SubscriptionRow[]
   initialTotal: number
@@ -86,6 +105,8 @@ export function SubscriptionsTable({
   accounts: AccountOption[]
   products: ProductOption[]
   providers: ProviderOption[]
+  countries: CountryOption[]
+  defaultCountryId?: string
 }) {
   const [query, setQuery] = useState("")
   const [showCanceled, setShowCanceled] = useState(false)
@@ -226,11 +247,16 @@ export function SubscriptionsTable({
               <TableCell>
                 <SubscriptionActions
                   accounts={accounts}
+                  countries={countries}
+                  defaultCountryId={defaultCountryId}
                   products={products}
                   providers={providers}
                   subscription={{
                     id: item.id,
+                    customerId: item.customerId,
+                    customerCountryId: item.customerCountryId,
                     customerName: item.customerName,
+                    customerPhone: item.customerPhone,
                     customerPhoneE164: item.customerPhoneE164,
                     customerTelegram: item.customerTelegram,
                     productId: item.productId,
@@ -243,6 +269,9 @@ export function SubscriptionsTable({
                     currentPriceCurrency: item.currentPriceCurrency,
                     currentExchangeRate: item.currentExchangeRate,
                     hasPurchaseCost: item.hasPurchaseCost,
+                    managedEmailId: item.managedEmailId,
+                    purchaseCost: item.purchaseCost,
+                    accountLabel: item.accountLabel,
                     notes: item.notes,
                     productName: item.productName,
                     status: item.status,

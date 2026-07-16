@@ -28,7 +28,7 @@ export async function getSubscriptionsPage(
   let productIds: string[] | null = null
   let subscriptionQuery = supabase
     .from("subscriptions")
-    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, notes, customers(display_name, phone, phone_e164, phone_normalized, telegram_username), products(id, slug, name, services(slug, name)), service_accounts(label, login_email, username, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields)", { count: "exact" })
+    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, notes, customers(id, country_id, display_name, phone, phone_e164, phone_normalized, telegram_username), products(id, slug, name, services(slug, name)), service_accounts(label, login_email, username, provider_id, email_address_id, base_cost_amount, base_cost_currency, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields)", { count: "exact" })
 
   subscriptionQuery = showCanceled
     ? subscriptionQuery.in("status", ["canceled", "inactive"])
@@ -126,7 +126,11 @@ export async function getSubscriptionsPage(
     ...new Set((subscriptions ?? []).map((item) => item.service_account_id).filter(Boolean)),
   ] as string[]
   const subscriptionIds = (subscriptions ?? []).map((item) => item.id)
-  const [{ data: credentials }, { data: purchaseCosts }] = await Promise.all([
+  const [
+    { data: credentials },
+    { data: purchaseCosts },
+    { data: emailUsages },
+  ] = await Promise.all([
     accountIds.length
       ? supabase
           .from("account_credentials")
@@ -136,16 +140,29 @@ export async function getSubscriptionsPage(
     subscriptionIds.length
       ? supabase
           .from("costs")
-          .select("subscription_id")
+          .select("subscription_id, provider_id, amount, currency")
           .eq("cost_type", "purchase")
           .in("subscription_id", subscriptionIds)
+      : Promise.resolve({ data: [] }),
+    subscriptionIds.length
+      ? supabase
+          .from("email_usages")
+          .select("subscription_id, email_address_id")
+          .in("subscription_id", subscriptionIds)
+          .is("ended_at", null)
       : Promise.resolve({ data: [] }),
   ])
   const credentialsByAccountId = new Map(
     (credentials ?? []).map((item) => [item.service_account_id, item])
   )
-  const purchaseCostSubscriptions = new Set(
-    (purchaseCosts ?? []).map((cost) => cost.subscription_id)
+  const purchaseCostsBySubscription = new Map(
+    (purchaseCosts ?? []).map((cost) => [cost.subscription_id, cost])
+  )
+  const managedEmailBySubscription = new Map(
+    (emailUsages ?? []).map((usage) => [
+      usage.subscription_id,
+      usage.email_address_id,
+    ])
   )
   const rows: SubscriptionRow[] = (subscriptions ?? []).map((subscription) => {
     const customer = one(subscription.customers)
@@ -153,9 +170,12 @@ export async function getSubscriptionsPage(
     const service = one(product?.services ?? null)
     const account = one(subscription.service_accounts)
     const detail = one(subscription.subscription_access_details)
+    const purchaseCost = purchaseCostsBySubscription.get(subscription.id)
 
     return {
       id: subscription.id,
+      customerId: customer?.id ?? "",
+      customerCountryId: customer?.country_id ?? "",
       customerName: customer?.display_name ?? "Cliente",
       customerPhone: customer?.phone ?? null,
       customerPhoneE164: customer?.phone_e164 ?? null,
@@ -171,6 +191,10 @@ export async function getSubscriptionsPage(
         ? {
             login_email: account.login_email,
             username: account.username,
+            provider_id: account.provider_id,
+            email_address_id: account.email_address_id,
+            base_cost_amount: account.base_cost_amount,
+            base_cost_currency: account.base_cost_currency,
             two_factor_url: account.two_factor_url,
             account_credentials:
               credentialsByAccountId.get(subscription.service_account_id ?? "") ?? null,
@@ -190,7 +214,18 @@ export async function getSubscriptionsPage(
       currentPriceAmount: subscription.current_price_amount,
       currentPriceCurrency: subscription.current_price_currency ?? "BOB",
       currentExchangeRate: subscription.current_exchange_rate,
-      hasPurchaseCost: purchaseCostSubscriptions.has(subscription.id),
+      hasPurchaseCost: Boolean(purchaseCost),
+      purchaseCost: purchaseCost
+        ? {
+            providerId: purchaseCost.provider_id,
+            amount: purchaseCost.amount,
+            currency: purchaseCost.currency,
+          }
+        : null,
+      managedEmailId:
+        managedEmailBySubscription.get(subscription.id) ??
+        account?.email_address_id ??
+        null,
       notes: subscription.notes,
       detail: detail ?? null,
     }

@@ -3,7 +3,12 @@
 import { useActionState, useCallback, useEffect, useRef, useState } from "react"
 import { PlusIcon } from "lucide-react"
 
-import { createQuickProvider, createSale } from "@/app/actions"
+import {
+  createQuickProvider,
+  createSale,
+  updateSubscription,
+  type SaleState,
+} from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -103,6 +108,46 @@ export type SaleFormProps = {
   defaultCountryId?: string
   defaultProductSlug?: string
   onSaved?: () => void
+}
+
+export type SaleFormInitialValues = {
+  subscriptionId: string
+  customerId: string
+  countryId: string
+  phone: string
+  telegramUsername: string
+  productSlug: string
+  serviceAccountId: string | null
+  providerId: string | null
+  accountLabel: string
+  managedEmailId: string | null
+  loginEmail: string
+  loginPassword: string
+  emailPassword: string
+  invitationEmail: string
+  profileLabel: string
+  twoFactorUrl: string
+  startsOn: string
+  durationMonths: number
+  priceAmount: number
+  priceCurrency: "BOB" | "USDT"
+  purchaseAmount: number
+  purchaseCurrency: "BOB" | "USDT"
+  notes: string
+  accessNotes: string
+}
+
+export type EditSaleFormProps = SaleFormProps & {
+  initialValues: SaleFormInitialValues
+}
+
+type SaleFormBodyProps = SaleFormProps & {
+  initialValues?: SaleFormInitialValues
+  submitAction: (
+    state: SaleState,
+    formData: FormData
+  ) => Promise<SaleState>
+  submitLabel: string
 }
 
 const productCopy: Record<
@@ -255,7 +300,7 @@ function QuickProviderDialog({
   )
 }
 
-export function SaleForm({
+function SaleFormBody({
   products,
   accounts,
   providers,
@@ -263,20 +308,32 @@ export function SaleForm({
   defaultCountryId,
   defaultProductSlug,
   onSaved,
-}: SaleFormProps) {
+  initialValues,
+  submitAction,
+  submitLabel,
+}: SaleFormBodyProps) {
   const initialProduct =
-    products.find((product) => product.slug === defaultProductSlug) ??
+    products.find(
+      (product) =>
+        product.slug === (initialValues?.productSlug ?? defaultProductSlug)
+    ) ??
     products[0]
-  const [state, action, pending] = useActionState(createSale, {})
+  const [state, action, pending] = useActionState(submitAction, {})
   const [productSlug, setProductSlug] = useState(initialProduct?.slug ?? "")
   const [countryId, setCountryId] = useState(
-    defaultCountryId ?? countries[0]?.id ?? ""
+    initialValues?.countryId ?? defaultCountryId ?? countries[0]?.id ?? ""
   )
-  const [phone, setPhone] = useState("")
-  const [telegramUsername, setTelegramUsername] = useState("")
-  const [loginEmail, setLoginEmail] = useState("")
-  const [invitationEmail, setInvitationEmail] = useState("")
-  const [emailPassword, setEmailPassword] = useState("")
+  const [phone, setPhone] = useState(initialValues?.phone ?? "")
+  const [telegramUsername, setTelegramUsername] = useState(
+    initialValues?.telegramUsername ? `@${initialValues.telegramUsername}` : ""
+  )
+  const [loginEmail, setLoginEmail] = useState(initialValues?.loginEmail ?? "")
+  const [invitationEmail, setInvitationEmail] = useState(
+    initialValues?.invitationEmail ?? ""
+  )
+  const [emailPassword, setEmailPassword] = useState(
+    initialValues?.emailPassword ?? ""
+  )
   const [duplicateCheck, setDuplicateCheck] = useState<DuplicateCheck | null>(
     null
   )
@@ -284,7 +341,11 @@ export function SaleForm({
     (product) => product.slug === productSlug
   )
   const initialSharedAccount =
-    initialProduct?.serviceSlug === "chatgpt-shared"
+    initialValues?.serviceAccountId
+      ? accounts.find(
+          (account) => account.id === initialValues.serviceAccountId
+        )
+      : initialProduct?.serviceSlug === "chatgpt-shared"
       ? accounts.find((account) => account.serviceSlug === "chatgpt-shared")
       : undefined
   const [productLabel, setProductLabel] = useState(
@@ -296,30 +357,49 @@ export function SaleForm({
   const [accountLabel, setAccountLabel] = useState(
     initialSharedAccount?.label ?? ""
   )
-  const [providerId, setProviderId] = useState("none")
+  const [providerId, setProviderId] = useState(
+    initialValues?.providerId ?? "none"
+  )
   const [providerOptions, setProviderOptions] = useState(providers)
   const [providerDialogOpen, setProviderDialogOpen] = useState(false)
   const [accountMode, setAccountMode] = useState<"new" | "existing">("new")
   const [managedEmailMode, setManagedEmailMode] = useState<"new" | "existing">(
     "new"
   )
-  const [linkInventory, setLinkInventory] = useState(false)
+  const [linkInventory, setLinkInventory] = useState(
+    Boolean(
+      initialValues?.serviceAccountId &&
+        initialProduct?.purchaseMode === "inventory"
+    )
+  )
   const [spotifySeatType, setSpotifySeatType] =
-    useState<SpotifySeatType>(SPOTIFY_MEMBER)
+    useState<SpotifySeatType>(
+      initialValues?.profileLabel === SPOTIFY_OWNER
+        ? SPOTIFY_OWNER
+        : SPOTIFY_MEMBER
+    )
   const [duration, setDuration] = useState(
-    String(selectedProduct?.defaultDurationMonths ?? 1)
+    String(
+      initialValues?.durationMonths ?? selectedProduct?.defaultDurationMonths ?? 1
+    )
   )
   const [price, setPrice] = useState(
-    String(selectedProduct?.defaultPriceAmount ?? 0)
+    String(initialValues?.priceAmount ?? selectedProduct?.defaultPriceAmount ?? 0)
   )
   const [priceCurrency, setPriceCurrency] = useState<"BOB" | "USDT">(
-    selectedProduct?.defaultPriceCurrency ?? "BOB"
+    initialValues?.priceCurrency ?? selectedProduct?.defaultPriceCurrency ?? "BOB"
   )
   const [purchaseAmount, setPurchaseAmount] = useState(
-    String(selectedProduct?.defaultPurchaseAmount ?? 0)
+    String(
+      initialValues?.purchaseAmount ??
+        selectedProduct?.defaultPurchaseAmount ??
+        0
+    )
   )
   const [purchaseCurrency, setPurchaseCurrency] = useState<"BOB" | "USDT">(
-    selectedProduct?.defaultPurchaseCurrency ?? "USDT"
+    initialValues?.purchaseCurrency ??
+      selectedProduct?.defaultPurchaseCurrency ??
+      "USDT"
   )
   const configuredFields = new Set(selectedProduct?.accessFields ?? [])
   const productLabels = productCopy[productSlug] ?? {}
@@ -342,6 +422,7 @@ export function SaleForm({
       : undefined,
   }
   const isSpotify = selectedProduct?.slug === "spotify_family_member"
+  const editing = Boolean(initialValues)
   const canReuseIndividual = selectedProduct?.purchaseMode === "individual"
   const usesOptionalInventory =
     selectedProduct?.purchaseMode === "inventory" && !isSpotify
@@ -359,7 +440,9 @@ export function SaleForm({
         (account) =>
           account.serviceSlug === requiredAccountService &&
           (!isSpotify || account.seatsTotal !== null) &&
-          (accountMode === "new" || account.availableForSale)
+          (accountMode === "new" ||
+            account.availableForSale ||
+            account.id === initialValues?.serviceAccountId)
       )
     : []
   const selectedAccount = accountOptions.find(
@@ -382,7 +465,7 @@ export function SaleForm({
       accountMode === "new" &&
       managedEmailMode === "new"
     )
-  const defaultStartDate = todayDate()
+  const defaultStartDate = initialValues?.startsOn ?? todayDate()
   const accountEmail = loginEmail.trim() || invitationEmail.trim()
   const normalizedTelegram = normalizeTelegramUsername(telegramUsername)
   const telegramInvalid =
@@ -457,6 +540,15 @@ export function SaleForm({
       if (hasTelegram) {
         params.set("telegramUsername", normalizedTelegram)
       }
+      if (initialValues) {
+        params.set("excludeSubscriptionId", initialValues.subscriptionId)
+        if (initialValues.serviceAccountId) {
+          params.set(
+            "excludeServiceAccountId",
+            initialValues.serviceAccountId
+          )
+        }
+      }
       if (canReuseIndividual && accountMode === "new" && accountEmail) {
         params.set("loginEmail", accountEmail)
       }
@@ -488,12 +580,19 @@ export function SaleForm({
     phone,
     productSlug,
     telegramUsername,
+    initialValues,
   ])
 
   function selectProduct(slug: string) {
     const product = products.find((item) => item.slug === slug)
     const firstSharedAccount =
-      product?.serviceSlug === "chatgpt-shared"
+      editing && initialValues?.serviceAccountId
+        ? accounts.find(
+            (account) =>
+              account.id === initialValues.serviceAccountId &&
+              account.serviceSlug === product?.serviceSlug
+          )
+        : product?.serviceSlug === "chatgpt-shared"
         ? accounts.find((account) => account.serviceSlug === "chatgpt-shared")
         : undefined
 
@@ -502,13 +601,17 @@ export function SaleForm({
     setAccountId(firstSharedAccount?.id ?? "")
     setAccountLabel(firstSharedAccount?.label ?? "")
     setAccountMode("new")
-    setLinkInventory(false)
+    setLinkInventory(
+      Boolean(firstSharedAccount && product?.purchaseMode === "inventory")
+    )
     setSpotifySeatType(SPOTIFY_MEMBER)
     setDuplicateCheck(null)
-    setLoginEmail("")
-    setInvitationEmail("")
-    setEmailPassword("")
-    setProviderId("none")
+    if (!editing) {
+      setLoginEmail("")
+      setInvitationEmail("")
+      setEmailPassword("")
+      setProviderId("none")
+    }
     setManagedEmailMode("new")
     setDuration(String(product?.defaultDurationMonths ?? 1))
     setPrice(String(product?.defaultPriceAmount ?? 0))
@@ -562,6 +665,26 @@ export function SaleForm({
   return (
     <form action={action}>
       <FieldGroup>
+        {initialValues ? (
+          <>
+            <input
+              name="id"
+              type="hidden"
+              value={initialValues.subscriptionId}
+            />
+            <input
+              name="customer_id"
+              type="hidden"
+              value={initialValues.customerId}
+            />
+            <input
+              name="current_email_address_id"
+              type="hidden"
+              value={initialValues.managedEmailId ?? ""}
+            />
+          </>
+        ) : null}
+        <input name="service_account_id" type="hidden" value={accountId} />
         {state.error ? (
           <Alert variant="destructive">
             <AlertTitle>No se pudo guardar</AlertTitle>
@@ -753,8 +876,13 @@ export function SaleForm({
                     const next = checked === true
                     setLinkInventory(next)
 
+                    if (!next) {
+                      setAccountId("")
+                      setAccountLabel("")
+                      return
+                    }
+
                     if (
-                      next &&
                       selectedProduct?.serviceSlug === "chatgpt-shared"
                     ) {
                       const account = accounts.find(
@@ -816,7 +944,7 @@ export function SaleForm({
               </Field>
             ) : null}
 
-            {canReuseIndividual ? (
+            {canReuseIndividual && !editing ? (
               <Field>
                 <FieldLabel>Cuenta privada</FieldLabel>
                 <Select
@@ -858,11 +986,6 @@ export function SaleForm({
                       ? "Cuenta disponible"
                       : (copy.accountLabel ?? "Inventario enlazado")}
                 </FieldLabel>
-                <input
-                  name="service_account_id"
-                  type="hidden"
-                  value={accountId}
-                />
                 <Select
                   key={productSlug}
                   value={accountLabel}
@@ -977,6 +1100,7 @@ export function SaleForm({
                           "Nombre interno de la cuenta"}
                       </FieldLabel>
                       <Input
+                        defaultValue={initialValues?.accountLabel}
                         id="account_label"
                         name="account_label"
                         placeholder="Cuenta cliente X"
@@ -1018,6 +1142,7 @@ export function SaleForm({
                 <ManagedEmailPicker
                   email={loginEmail}
                   emailPassword={emailPassword}
+                  initialEmailId={initialValues?.managedEmailId}
                   onEmailChange={(value) => {
                     setLoginEmail(value)
                     setDuplicateCheck(null)
@@ -1027,6 +1152,7 @@ export function SaleForm({
                   platformPassword={
                     copy.loginPasswordLabel
                       ? {
+                          defaultValue: initialValues?.loginPassword,
                           label: copy.loginPasswordLabel,
                           name: "login_password",
                         }
@@ -1047,6 +1173,7 @@ export function SaleForm({
                         {copy.profileLabel}
                       </FieldLabel>
                       <Input
+                        defaultValue={initialValues?.profileLabel}
                         id="profile_label"
                         name="profile_label"
                         placeholder="Perfil 1"
@@ -1057,7 +1184,11 @@ export function SaleForm({
                   createsInventoryOnSale ? (
                     <Field>
                       <FieldLabel htmlFor="two_factor_url">Link 2FA</FieldLabel>
-                      <Input id="two_factor_url" name="two_factor_url" />
+                      <Input
+                        defaultValue={initialValues?.twoFactorUrl}
+                        id="two_factor_url"
+                        name="two_factor_url"
+                      />
                     </Field>
                   ) : null}
                 </FieldGroup>
@@ -1191,6 +1322,32 @@ export function SaleForm({
           </FieldGroup>
         </FieldSet>
 
+        <FieldSet>
+          <FieldLegend>Notas</FieldLegend>
+          <FieldGroup
+            className={cn("grid gap-3", initialValues && "md:grid-cols-2")}
+          >
+            <Field>
+              <FieldLabel htmlFor="notes">Notas venta</FieldLabel>
+              <Input
+                defaultValue={initialValues?.notes}
+                id="notes"
+                name="notes"
+              />
+            </Field>
+            {initialValues ? (
+              <Field>
+                <FieldLabel htmlFor="access_notes">Notas acceso</FieldLabel>
+                <Input
+                  defaultValue={initialValues.accessNotes}
+                  id="access_notes"
+                  name="access_notes"
+                />
+              </Field>
+            ) : null}
+          </FieldGroup>
+        </FieldSet>
+
         {currentConflict?.kind === "active_sale" ||
         liveActiveMatches.length > 0 ? (
           <Button
@@ -1207,7 +1364,7 @@ export function SaleForm({
             value="1"
             variant="destructive"
           >
-            {pending ? "Guardando..." : "Guardar de todos modos"}
+            {pending ? "Guardando..." : `${submitLabel} de todos modos`}
           </Button>
         ) : (
           <Button
@@ -1223,10 +1380,34 @@ export function SaleForm({
               currentConflict?.kind === "private_account"
             }
           >
-            {pending ? "Guardando..." : "Guardar venta"}
+            {pending ? "Guardando..." : submitLabel}
           </Button>
         )}
       </FieldGroup>
     </form>
+  )
+}
+
+export function SaleForm(props: SaleFormProps) {
+  return (
+    <SaleFormBody
+      {...props}
+      submitAction={createSale}
+      submitLabel="Guardar venta"
+    />
+  )
+}
+
+export function EditSaleForm({
+  initialValues,
+  ...props
+}: EditSaleFormProps) {
+  return (
+    <SaleFormBody
+      {...props}
+      initialValues={initialValues}
+      submitAction={updateSubscription}
+      submitLabel="Guardar cambios"
+    />
   )
 }

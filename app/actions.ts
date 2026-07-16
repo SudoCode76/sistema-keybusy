@@ -22,7 +22,7 @@ type AuthState = {
   message?: string
 }
 
-type SaleState = {
+export type SaleState = {
   conflict?: {
     kind: "active_sale" | "expired_sale" | "private_account"
     productSlug: string
@@ -1887,34 +1887,58 @@ export async function updateSubscription(
 ): Promise<SaleState> {
   const { supabase } = await requireAdmin()
   const id = requireValue(formData.get("id"), "Venta")
-  const startsOn = requireValue(formData.get("starts_on"), "Inicio")
-  const duration = formNumber(formData.get("duration_months"), 1)
-  const price = formNumber(formData.get("current_price_amount"))
-  const priceCurrency = currency(formData.get("current_price_currency"))
-  const rate = formNumber(formData.get("current_exchange_rate"))
-  const values = toMoneyValues(price, priceCurrency, rate || undefined)
-  const endsOn = addMonths(startsOn, duration)
-  let profileLabel = formText(formData.get("profile_label"))
   const productId = requireValue(formData.get("product_id"), "Item")
-  const accountId = optionalId(formData.get("service_account_id"))
-  let loginEmail = formText(formData.get("login_email"))
-  let loginPassword = formText(formData.get("login_password"))
-  let emailPassword = formText(formData.get("email_password"))
+  const phone = formText(formData.get("phone"))
+  const telegramRaw = formText(formData.get("telegram_username"))
+  const telegramUsername = normalizeTelegramUsername(telegramRaw)
+  const countryId = phone
+    ? requireValue(formData.get("country_id"), "Pais")
+    : null
+
+  if (!phone && !telegramUsername) {
+    return { error: "Ingresa un teléfono o un usuario de Telegram" }
+  }
+  if (telegramRaw && !isValidTelegramUsername(telegramRaw)) {
+    return {
+      error: "Telegram debe tener entre 5 y 32 letras, números o guion bajo",
+    }
+  }
+
   const { data: product, error: productError } = await supabase
     .from("products")
-    .select("slug")
+    .select(
+      "slug, purchase_mode, default_purchase_amount, default_purchase_currency"
+    )
     .eq("id", productId)
     .single()
-
   if (productError || !product) {
     return { error: productError?.message ?? "Item vendible invalido" }
   }
 
+  const accountId = optionalId(formData.get("service_account_id"))
+  const managedEmailMode = formText(formData.get("managed_email_mode"))
+  let managedEmail: ManagedEmail | null = null
+  try {
+    if (managedEmailMode === "existing") {
+      managedEmail = await selectedManagedEmail(supabase, formData)
+    }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Correo no válido",
+    }
+  }
+
+  let loginEmail = managedEmail?.email ?? formText(formData.get("login_email"))
+  let loginPassword = formText(formData.get("login_password"))
+  let emailPassword =
+    managedEmail?.email_password ?? formText(formData.get("email_password"))
+  let profileLabel = formText(formData.get("profile_label"))
+
   if (product.slug === "spotify_family_member") {
     profileLabel = profileLabel === "Titular" ? "Titular" : "Miembro familiar"
-    if (!accountId)
+    if (!accountId) {
       return { error: "Spotify requiere un plan familiar enlazado" }
-
+    }
     if (profileLabel === "Titular") {
       try {
         const credentials = await spotifyOwnerCredentials(supabase, accountId)
@@ -1932,81 +1956,94 @@ export async function updateSubscription(
     }
   }
 
-  const { error: subscriptionError } = await supabase
-    .from("subscriptions")
-    .update({
+  let exchangeRate: number
+  try {
+    const result = await fetchBinanceAverage("BUY")
+    exchangeRate = result.average
+    const { error } = await supabase.from("exchange_rate_snapshots").insert({
+      trade_type: "BUY",
+      rows_requested: 20,
+      average_price: result.average,
+      raw_ads: result.ads,
+    })
+    if (error) return { error: error.message }
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "No se pudo obtener el tipo de cambio",
+    }
+  }
+
+  let currentSecret: string | null = null
+  if (accountId) {
+    const { data, error } = await supabase
+      .from("account_credentials")
+      .select("secret_payload")
+      .eq("service_account_id", accountId)
+      .maybeSingle()
+    if (error) return { error: error.message }
+    currentSecret = data?.secret_payload ?? null
+  }
+  const secretPayload = mergeSecretPayload(currentSecret, {
+    platform_password: loginPassword,
+    email_password: emailPassword,
+  })
+  const purchaseAmountText = formText(formData.get("purchase_amount"))
+  const purchaseAmount =
+    purchaseAmountText === null
+      ? Number(product.default_purchase_amount ?? 0)
+      : formNumber(purchaseAmountText)
+  const purchaseCurrency = formText(formData.get("purchase_currency"))
+    ? currency(formData.get("purchase_currency"))
+    : currency(product.default_purchase_currency)
+
+  const { error } = await supabase.rpc("update_sale", {
+    p_subscription_id: id,
+    p_values: {
+      country_id: countryId,
+      phone,
+      telegram_username: telegramUsername,
       product_id: productId,
       service_account_id: accountId,
-      slot_label: profileLabel,
-      starts_on: startsOn,
-      ends_on: endsOn,
-      duration_months: duration,
-      current_price_amount: price,
-      current_price_currency: priceCurrency,
-      current_exchange_rate: rate || null,
+      provider_id: optionalId(formData.get("provider_id")),
+      email_address_id:
+        managedEmail?.id ??
+        (managedEmailMode
+          ? null
+          : optionalId(formData.get("current_email_address_id"))),
+      managed_email_mode: managedEmailMode,
+      email_origin: formText(formData.get("email_origin")) ?? "self",
+      email_provider_id: optionalId(formData.get("email_provider_id")),
+      account_label: formText(formData.get("account_label")),
+      login_email: loginEmail,
+      login_password: loginPassword,
+      email_password: emailPassword,
+      invitation_email: formText(formData.get("invitation_email")),
+      profile_label: profileLabel,
+      two_factor_url: formText(formData.get("two_factor_url")),
+      starts_on: requireValue(formData.get("starts_on"), "Inicio"),
+      duration_months: formNumber(formData.get("duration_months"), 1),
+      price_amount: formNumber(formData.get("current_price_amount")),
+      price_currency: currency(formData.get("current_price_currency")),
+      exchange_rate: exchangeRate,
+      purchase_amount: purchaseAmount,
+      purchase_currency: purchaseCurrency,
+      purchase_exchange_rate: exchangeRate,
+      secret_payload: secretPayload,
       notes: formText(formData.get("notes")),
-    })
-    .eq("id", id)
-
-  if (subscriptionError) return { error: subscriptionError.message }
-
-  await insertOrThrow(
-    supabase
-      .from("billing_cycles")
-      .update({
-        period_start: startsOn,
-        period_end: endsOn,
-        due_on: startsOn,
-        status: "paid",
-        expected_amount: price,
-        expected_currency: priceCurrency,
-        exchange_rate: rate || null,
-        expected_bob: values.bob,
-        expected_usdt: values.usdt,
-      })
-      .eq("subscription_id", id)
-  )
-
-  const managedEmailPassword = await syncSubscriptionEmailUsage(supabase, {
-    subscriptionId: id,
-    productId,
-    loginEmail,
-    platformPassword: loginPassword,
+      access_notes: formText(formData.get("access_notes")),
+    },
   })
 
-  await insertOrThrow(
-    supabase
-      .from("payments")
-      .update({
-        amount: price,
-        currency: priceCurrency,
-        exchange_rate: rate || null,
-        amount_bob: values.bob,
-        amount_usdt: values.usdt,
-      })
-      .eq("subscription_id", id)
-  )
-
-  await insertOrThrow(
-    supabase.from("subscription_access_details").upsert(
-      {
-        subscription_id: id,
-        login_email: loginEmail,
-        login_password: loginPassword,
-        email_password: managedEmailPassword ?? emailPassword,
-        invitation_email: formText(formData.get("invitation_email")),
-        profile_label: profileLabel,
-        notes: formText(formData.get("access_notes")),
-        visible_to_customer: formData.get("visible_to_customer") === "on",
-        visible_fields: formData.getAll("visible_fields").map(String),
-      },
-      { onConflict: "subscription_id" }
-    )
-  )
+  if (error) return { error: error.message }
 
   revalidatePath("/admin")
   revalidatePath("/admin/subscriptions")
+  revalidatePath("/admin/accounts")
   revalidatePath("/admin/payments")
+  revalidatePath("/admin/costs")
   revalidatePath("/admin/emails")
   revalidatePath("/portal")
 

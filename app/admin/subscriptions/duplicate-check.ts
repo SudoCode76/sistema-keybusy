@@ -89,7 +89,8 @@ async function findCustomer(
   supabase: ServerClient,
   countryId: string | null,
   phone: string,
-  telegramUsername?: string | null
+  telegramUsername?: string | null,
+  excludeSubscriptionId?: string | null
 ): Promise<DuplicateCheck["customer"]> {
   const telegram = String(telegramUsername ?? "")
     .trim()
@@ -135,7 +136,7 @@ async function findCustomer(
     .single()
   if (customerError) throw customerError
 
-  const { data: subscriptions, error: subscriptionsError } = await supabase
+  let subscriptionsQuery = supabase
     .from("subscriptions")
     .select(
       "id, starts_on, ends_on, products(service_id, slug, name, services(name))"
@@ -143,6 +144,11 @@ async function findCustomer(
     .eq("customer_id", customerRow.id)
     .not("status", "in", "(canceled,inactive)")
     .order("ends_on", { ascending: false })
+  if (excludeSubscriptionId) {
+    subscriptionsQuery = subscriptionsQuery.neq("id", excludeSubscriptionId)
+  }
+  const { data: subscriptions, error: subscriptionsError } =
+    await subscriptionsQuery
   if (subscriptionsError) throw subscriptionsError
 
   return {
@@ -179,11 +185,13 @@ async function findPrivateAccount(
     serviceName,
     purchaseMode,
     loginEmail,
+    excludeServiceAccountId,
   }: {
     serviceId: string
     serviceName: string
     purchaseMode: string
     loginEmail?: string | null
+    excludeServiceAccountId?: string | null
   }
 ): Promise<ExistingPrivateAccount | null> {
   const normalizedEmail = loginEmail?.trim().toLowerCase()
@@ -199,7 +207,7 @@ async function findPrivateAccount(
   const account = accounts?.find(
     (item) => item.login_email?.trim().toLowerCase() === normalizedEmail
   )
-  if (!account) return null
+  if (!account || account.id === excludeServiceAccountId) return null
 
   const { data: usedSale, error: usedSaleError } = await supabase
     .from("subscriptions")
@@ -243,12 +251,16 @@ export async function checkSaleDuplicates(
     countryId,
     phone,
     telegramUsername,
+    excludeSubscriptionId,
+    excludeServiceAccountId,
     productSlug,
     loginEmail,
   }: {
     countryId: string | null
     phone: string
     telegramUsername?: string | null
+    excludeSubscriptionId?: string | null
+    excludeServiceAccountId?: string | null
     productSlug: string
     loginEmail?: string | null
   }
@@ -271,8 +283,18 @@ export async function checkSaleDuplicates(
     purchaseMode: product.purchase_mode,
   }
   const [customer, privateAccount] = await Promise.all([
-    findCustomer(supabase, countryId, phone, telegramUsername),
-    findPrivateAccount(supabase, { ...target, loginEmail }),
+    findCustomer(
+      supabase,
+      countryId,
+      phone,
+      telegramUsername,
+      excludeSubscriptionId
+    ),
+    findPrivateAccount(supabase, {
+      ...target,
+      loginEmail,
+      excludeServiceAccountId,
+    }),
   ])
 
   return {

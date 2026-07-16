@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useMemo, useState } from "react"
+import { useActionState, useState } from "react"
 import { CheckIcon, CopyIcon, MoreHorizontalIcon } from "lucide-react"
 
 import {
@@ -10,11 +10,9 @@ import {
   registerMissingPurchaseCost,
   replaceSubscriptionAccount,
   renewSubscription,
-  updateSubscription,
 } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -48,17 +46,20 @@ import { money } from "@/lib/money"
 import { telegramUrl, whatsappUrl } from "@/lib/phone"
 
 import { FormSubmitButton } from "../accounts/form-submit-button"
-import type { AccountOption, ProductOption, ProviderOption } from "./sale-form"
 import {
-  SPOTIFY_MEMBER,
-  SPOTIFY_OWNER,
-  spotifyPlanUnavailable,
-  type SpotifySeatType,
-} from "./spotify-seats"
+  EditSaleForm,
+  type AccountOption,
+  type CountryOption,
+  type ProductOption,
+  type ProviderOption,
+} from "./sale-form"
 
 type SubscriptionRow = {
   id: string
+  customerId: string
+  customerCountryId: string
   customerName: string
+  customerPhone: string | null
   customerPhoneE164: string | null
   customerTelegram: string | null
   productId: string
@@ -71,6 +72,13 @@ type SubscriptionRow = {
   currentPriceCurrency: "BOB" | "USDT"
   currentExchangeRate: number | null
   hasPurchaseCost: boolean
+  managedEmailId: string | null
+  purchaseCost: {
+    providerId: string | null
+    amount: number
+    currency: "BOB" | "USDT"
+  } | null
+  accountLabel: string | null
   notes: string | null
   productName: string
   status: string
@@ -78,6 +86,10 @@ type SubscriptionRow = {
   account: {
     login_email: string | null
     username: string | null
+    provider_id: string | null
+    email_address_id: string | null
+    base_cost_amount: number
+    base_cost_currency: "BOB" | "USDT"
     two_factor_url: string | null
     account_credentials?: { secret_payload: string | null } | null
     spotify_family_plans?: {
@@ -96,15 +108,6 @@ type SubscriptionRow = {
     visible_fields: string[]
   } | null
 }
-
-const visibleFields = [
-  ["login_email", "Correo"],
-  ["login_password", "Contrasena"],
-  ["email_password", "Contrasena correo"],
-  ["invitation_email", "Correo invitado"],
-  ["profile_label", "Perfil"],
-  ["notes", "Notas"],
-] as const
 
 function parseSecretPayload(payload: string | null | undefined) {
   const parsed: Record<string, string> = {}
@@ -158,27 +161,21 @@ export function SubscriptionActions({
   products,
   accounts,
   providers,
+  countries,
+  defaultCountryId,
 }: {
   subscription: SubscriptionRow
   products: ProductOption[]
   accounts: AccountOption[]
   providers: ProviderOption[]
+  countries: CountryOption[]
+  defaultCountryId?: string
 }) {
   const [viewOpen, setViewOpen] = useState(false)
   const [open, setOpen] = useState(false)
   const [renewOpen, setRenewOpen] = useState(false)
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [costOpen, setCostOpen] = useState(false)
-  const [editState, action] = useActionState(
-    async (previousState: object, formData: FormData) => {
-      const result = await updateSubscription(previousState, formData)
-      if (result.message) {
-        setOpen(false)
-      }
-      return result
-    },
-    {}
-  )
   const [, replaceAction] = useActionState(
     async (previousState: object, formData: FormData) => {
       const result = await replaceSubscriptionAccount(previousState, formData)
@@ -197,37 +194,14 @@ export function SubscriptionActions({
     },
     {}
   )
-  const [productId, setProductId] = useState(subscription.productId)
   const subscriptionProduct = products.find(
     (product) => product.id === subscription.productId
   )
-  const selectedProduct = products.find((product) => product.id === productId)
-  const isSpotify = selectedProduct?.slug === "spotify_family_member"
   const canRegisterPurchaseCost =
     !subscription.hasPurchaseCost &&
     Boolean(subscription.serviceAccountId) &&
     subscriptionProduct?.purchaseMode === "individual" &&
     subscriptionProduct.defaultPurchaseAmount > 0
-  const [slotLabel, setSlotLabel] = useState<SpotifySeatType>(
-    subscription.slotLabel === SPOTIFY_OWNER
-      ? SPOTIFY_OWNER
-      : SPOTIFY_MEMBER
-  )
-  const accountOptions = useMemo(
-    () =>
-      selectedProduct?.purchaseMode === "individual"
-        ? []
-        : accounts.filter(
-            (account) =>
-              account.serviceSlug === selectedProduct?.serviceSlug &&
-              (!isSpotify || account.seatsTotal !== null)
-          ),
-    [accounts, isSpotify, selectedProduct]
-  )
-  const [accountId, setAccountId] = useState(
-    subscription.serviceAccountId ?? "none"
-  )
-  const [currency, setCurrency] = useState(subscription.currentPriceCurrency)
   const [replaceCurrency, setReplaceCurrency] = useState<"BOB" | "USDT">("USDT")
   const [replaceProviderId, setReplaceProviderId] = useState("none")
   const [replaceEmail, setReplaceEmail] = useState("")
@@ -237,6 +211,49 @@ export function SubscriptionActions({
   )
   const platformPassword =
     accountSecrets.platform_password ?? accountSecrets.password
+  const editableProducts = products.filter(
+    (product) => product.serviceSlug === subscription.serviceSlug
+  )
+  const editInitialValues = {
+    subscriptionId: subscription.id,
+    customerId: subscription.customerId,
+    countryId: subscription.customerCountryId || defaultCountryId || "",
+    phone: subscription.customerPhone ?? "",
+    telegramUsername: subscription.customerTelegram ?? "",
+    productSlug: subscriptionProduct?.slug ?? "",
+    serviceAccountId: subscription.serviceAccountId,
+    providerId:
+      subscription.purchaseCost?.providerId ??
+      subscription.account?.provider_id ??
+      null,
+    accountLabel: subscription.accountLabel ?? "",
+    managedEmailId: subscription.managedEmailId,
+    loginEmail:
+      subscription.detail?.login_email ??
+      subscription.account?.login_email ??
+      "",
+    loginPassword: subscription.detail?.login_password ?? platformPassword ?? "",
+    emailPassword:
+      subscription.detail?.email_password ?? accountSecrets.email_password ?? "",
+    invitationEmail: subscription.detail?.invitation_email ?? "",
+    profileLabel:
+      subscription.detail?.profile_label ?? subscription.slotLabel ?? "",
+    twoFactorUrl: subscription.account?.two_factor_url ?? "",
+    startsOn: subscription.startsOn,
+    durationMonths: subscription.durationMonths,
+    priceAmount: subscription.currentPriceAmount,
+    priceCurrency: subscription.currentPriceCurrency,
+    purchaseAmount:
+      subscription.purchaseCost?.amount ??
+      subscription.account?.base_cost_amount ??
+      0,
+    purchaseCurrency:
+      subscription.purchaseCost?.currency ??
+      subscription.account?.base_cost_currency ??
+      "USDT",
+    notes: subscription.notes ?? "",
+    accessNotes: subscription.detail?.notes ?? "",
+  } as const
   const extraPasswords = Object.entries(accountSecrets).filter(
     ([key]) =>
       key.toLowerCase().includes("password") &&
@@ -285,7 +302,7 @@ export function SubscriptionActions({
               </DropdownMenuItem>
             ) : null}
             {subscription.serviceAccountId &&
-            selectedProduct?.purchaseMode === "individual" ? (
+            subscriptionProduct?.purchaseMode === "individual" ? (
               <DropdownMenuItem onClick={() => setReplaceOpen(true)}>
                 Cambiar cuenta
               </DropdownMenuItem>
@@ -428,353 +445,20 @@ export function SubscriptionActions({
       </Dialog>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>Editar venta</DialogTitle>
             <DialogDescription>{subscription.productName}</DialogDescription>
           </DialogHeader>
-          <form action={action}>
-            <FieldGroup>
-              {editState.error ? (
-                <Alert variant="destructive">
-                  <AlertTitle>No se pudo actualizar</AlertTitle>
-                  <AlertDescription>{editState.error}</AlertDescription>
-                </Alert>
-              ) : null}
-              <input name="id" type="hidden" value={subscription.id} />
-              <input name="product_id" type="hidden" value={productId} />
-              <input
-                name="service_account_id"
-                type="hidden"
-                value={accountId}
-              />
-
-              <Field>
-                <FieldLabel>Ítem vendible</FieldLabel>
-                <Select
-                  value={productId}
-                  onValueChange={(value) => {
-                    if (value) {
-                      setProductId(value)
-                      setAccountId("none")
-                      if (
-                        products.find((product) => product.id === value)?.slug ===
-                        "spotify_family_member"
-                      ) {
-                        setSlotLabel(SPOTIFY_MEMBER)
-                      }
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {products.map((product) => (
-                        <SelectItem key={product.id} value={product.id}>
-                          {product.name} · {product.serviceName}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
-
-              {isSpotify ? (
-                <Field>
-                  <FieldLabel>Tipo de cupo Spotify</FieldLabel>
-                  <input name="profile_label" type="hidden" value={slotLabel} />
-                  <Select
-                    value={slotLabel}
-                    onValueChange={(value) => {
-                      const next =
-                        value === SPOTIFY_OWNER
-                          ? SPOTIFY_OWNER
-                          : SPOTIFY_MEMBER
-                      setSlotLabel(next)
-
-                      const account = accountOptions.find(
-                        (item) => item.id === accountId
-                      )
-                      if (
-                        account &&
-                        spotifyPlanUnavailable(account, next, {
-                          accountId: subscription.serviceAccountId,
-                          seatType: subscription.slotLabel,
-                        })
-                      ) {
-                        setAccountId("none")
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value={SPOTIFY_MEMBER}>
-                          {SPOTIFY_MEMBER}
-                        </SelectItem>
-                        <SelectItem value={SPOTIFY_OWNER}>
-                          {SPOTIFY_OWNER}
-                        </SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              ) : null}
-
-              {accountOptions.length > 0 ? (
-                <Field>
-                  <FieldLabel>
-                    {isSpotify ? "Plan familiar Spotify" : "Inventario"}
-                  </FieldLabel>
-                  <Select
-                    value={accountId}
-                    onValueChange={(value) => {
-                      if (value) setAccountId(value)
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Seleccionar inventario" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {!isSpotify ? (
-                          <SelectItem value="none">Sin inventario</SelectItem>
-                        ) : null}
-                        {accountOptions.map((account) => {
-                          const unavailable =
-                            isSpotify &&
-                            spotifyPlanUnavailable(account, slotLabel, {
-                              accountId: subscription.serviceAccountId,
-                              seatType: subscription.slotLabel,
-                            })
-
-                          return (
-                            <SelectItem
-                              disabled={unavailable}
-                              key={account.id}
-                              value={account.id}
-                            >
-                              {account.label}
-                              {isSpotify && account.seatsTotal !== null
-                                ? ` · ${account.seatsUsed}/${account.seatsTotal} cupos`
-                                : ""}
-                              {isSpotify && account.ownerAssigned
-                                ? " · titular asignado"
-                                : ""}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              ) : null}
-
-              <div className="grid gap-3 md:grid-cols-4">
-                <Field>
-                  <FieldLabel htmlFor={`starts_on_${subscription.id}`}>
-                    Inicio
-                  </FieldLabel>
-                  <Input
-                    defaultValue={subscription.startsOn}
-                    id={`starts_on_${subscription.id}`}
-                    name="starts_on"
-                    type="date"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`duration_${subscription.id}`}>
-                    Meses
-                  </FieldLabel>
-                  <Input
-                    defaultValue={subscription.durationMonths}
-                    id={`duration_${subscription.id}`}
-                    min="1"
-                    name="duration_months"
-                    type="number"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`price_${subscription.id}`}>
-                    Precio mensual
-                  </FieldLabel>
-                  <Input
-                    defaultValue={subscription.currentPriceAmount}
-                    id={`price_${subscription.id}`}
-                    name="current_price_amount"
-                    step="0.01"
-                    type="number"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>Moneda</FieldLabel>
-                  <Select
-                    value={currency}
-                    onValueChange={(value) =>
-                      setCurrency(value as "BOB" | "USDT")
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="BOB">BOB</SelectItem>
-                        <SelectItem value="USDT">USDT</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <input
-                    name="current_price_currency"
-                    type="hidden"
-                    value={currency}
-                  />
-                </Field>
-              </div>
-
-              <Field>
-                <FieldLabel htmlFor={`rate_${subscription.id}`}>
-                  Tipo de cambio
-                </FieldLabel>
-                <Input
-                  defaultValue={subscription.currentExchangeRate ?? ""}
-                  id={`rate_${subscription.id}`}
-                  name="current_exchange_rate"
-                  step="0.000001"
-                  type="number"
-                />
-              </Field>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                {isSpotify && slotLabel === SPOTIFY_OWNER ? (
-                  <Alert className="md:col-span-2">
-                    <AlertTitle>Credenciales de la cuenta madre</AlertTitle>
-                    <AlertDescription>
-                      Se volverán a copiar desde el inventario al actualizar.
-                    </AlertDescription>
-                  </Alert>
-                ) : (
-                  <>
-                    <Field>
-                      <FieldLabel htmlFor={`login_email_${subscription.id}`}>
-                        Correo
-                      </FieldLabel>
-                      <Input
-                        defaultValue={subscription.detail?.login_email ?? ""}
-                        id={`login_email_${subscription.id}`}
-                        name="login_email"
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor={`login_password_${subscription.id}`}>
-                        Contrasena
-                      </FieldLabel>
-                      <Input
-                        defaultValue={subscription.detail?.login_password ?? ""}
-                        id={`login_password_${subscription.id}`}
-                        name="login_password"
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor={`email_password_${subscription.id}`}>
-                        Contrasena correo
-                      </FieldLabel>
-                      <Input
-                        defaultValue={subscription.detail?.email_password ?? ""}
-                        id={`email_password_${subscription.id}`}
-                        name="email_password"
-                      />
-                    </Field>
-                  </>
-                )}
-                <Field>
-                  <FieldLabel htmlFor={`invitation_email_${subscription.id}`}>
-                    Correo invitado
-                  </FieldLabel>
-                  <Input
-                    defaultValue={subscription.detail?.invitation_email ?? ""}
-                    id={`invitation_email_${subscription.id}`}
-                    name="invitation_email"
-                  />
-                </Field>
-                {!isSpotify ? (
-                  <Field>
-                    <FieldLabel htmlFor={`profile_${subscription.id}`}>
-                      Perfil
-                    </FieldLabel>
-                    <Input
-                      defaultValue={subscription.detail?.profile_label ?? ""}
-                      id={`profile_${subscription.id}`}
-                      name="profile_label"
-                    />
-                  </Field>
-                ) : null}
-              </div>
-
-              <Field>
-                <FieldLabel htmlFor={`notes_${subscription.id}`}>
-                  Notas venta
-                </FieldLabel>
-                <Textarea
-                  defaultValue={subscription.notes ?? ""}
-                  id={`notes_${subscription.id}`}
-                  name="notes"
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor={`access_notes_${subscription.id}`}>
-                  Notas acceso
-                </FieldLabel>
-                <Textarea
-                  defaultValue={subscription.detail?.notes ?? ""}
-                  id={`access_notes_${subscription.id}`}
-                  name="access_notes"
-                />
-              </Field>
-
-              <div className="grid gap-3 rounded-lg border p-3">
-                <Field orientation="horizontal">
-                  <Checkbox
-                    defaultChecked={
-                      subscription.detail?.visible_to_customer ?? false
-                    }
-                    id={`visible_to_customer_${subscription.id}`}
-                    name="visible_to_customer"
-                  />
-                  <FieldLabel
-                    htmlFor={`visible_to_customer_${subscription.id}`}
-                  >
-                    Mostrar en portal
-                  </FieldLabel>
-                </Field>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {visibleFields.map(([field, label]) => (
-                    <Field key={field} orientation="horizontal">
-                      <Checkbox
-                        defaultChecked={subscription.detail?.visible_fields?.includes(
-                          field
-                        )}
-                        id={`${field}_${subscription.id}`}
-                        name="visible_fields"
-                        value={field}
-                      />
-                      <FieldLabel htmlFor={`${field}_${subscription.id}`}>
-                        {label}
-                      </FieldLabel>
-                    </Field>
-                  ))}
-                </div>
-              </div>
-
-              <FormSubmitButton pendingLabel="Guardando...">
-                Guardar cambios
-              </FormSubmitButton>
-            </FieldGroup>
-          </form>
+          <EditSaleForm
+            accounts={accounts}
+            countries={countries}
+            defaultCountryId={defaultCountryId}
+            initialValues={editInitialValues}
+            onSaved={() => setOpen(false)}
+            products={editableProducts}
+            providers={providers}
+          />
         </DialogContent>
       </Dialog>
 
