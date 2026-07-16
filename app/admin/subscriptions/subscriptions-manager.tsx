@@ -40,9 +40,12 @@ export function SubscriptionsManager({
   providers: ProviderOption[]
 }) {
   const [platform, setPlatform] = useState("all")
-  const defaultProductSlug = products.find(
-    (product) => platform === "all" || product.serviceSlug === platform
-  )?.slug
+  const defaultProductSlug =
+    platform === "all"
+      ? products[0]?.slug
+      : (products.find(
+          (product) => product.serviceSlug === platform && product.isDefault
+        ) ?? products.find((product) => product.serviceSlug === platform))?.slug
 
   return (
     <>

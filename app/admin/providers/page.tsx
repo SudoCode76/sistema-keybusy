@@ -16,6 +16,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogForm,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -88,20 +89,16 @@ export default async function ProvidersPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Dialog>
-            <DialogTrigger
-              render={
-                <Button>
-                  <PlusIcon data-icon="inline-start" />
-                  Nuevo proveedor
-                </Button>
-              }
-            />
+            <DialogTrigger render={<Button />}>
+              <PlusIcon data-icon="inline-start" />
+              Nuevo proveedor
+            </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader>
                 <DialogTitle>Nuevo proveedor</DialogTitle>
                 <DialogDescription>Para elegirlo al registrar inventario.</DialogDescription>
               </DialogHeader>
-              <form action={createProvider}>
+              <DialogForm action={createProvider}>
                 <FieldGroup>
                   <div className="grid gap-3 md:grid-cols-2">
                     <Field>
@@ -136,24 +133,20 @@ export default async function ProvidersPage() {
                   </Field>
                   <Button type="submit">Guardar proveedor</Button>
                 </FieldGroup>
-              </form>
+              </DialogForm>
             </DialogContent>
           </Dialog>
           <Dialog>
-            <DialogTrigger
-              render={
-                <Button variant="outline">
-                  <Globe2Icon data-icon="inline-start" />
-                  Nuevo país
-                </Button>
-              }
-            />
+            <DialogTrigger render={<Button variant="outline" />}>
+              <Globe2Icon data-icon="inline-start" />
+              Nuevo país
+            </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Nuevo país</DialogTitle>
                 <DialogDescription>Agrega uno si no aparece en la lista.</DialogDescription>
               </DialogHeader>
-              <form action={createCountry}>
+              <DialogForm action={createCountry}>
                 <FieldGroup>
                   <div className="grid gap-3 md:grid-cols-[80px_1fr]">
                     <Field>
@@ -171,7 +164,7 @@ export default async function ProvidersPage() {
                   </Field>
                   <Button type="submit">Guardar país</Button>
                 </FieldGroup>
-              </form>
+              </DialogForm>
             </DialogContent>
           </Dialog>
         </div>

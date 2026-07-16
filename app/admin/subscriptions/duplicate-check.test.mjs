@@ -1,7 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { accessStatus, matchingServiceSales } from "./duplicate-check.ts"
+import {
+  accessStatus,
+  matchingServiceSales,
+  resolveCustomerId,
+} from "./duplicate-check.ts"
 
 const accesses = [
   {
@@ -43,4 +47,14 @@ test("detecta ventas por servicio y clasifica vigencia", () => {
   )
   assert.equal(accessStatus("2026-07-14", "2026-07-15"), "expired")
   assert.equal(accessStatus("2026-07-15", "2026-07-15"), "active")
+})
+
+test("resuelve un cliente por teléfono o Telegram y bloquea cruces", () => {
+  assert.equal(resolveCustomerId("customer-1", null), "customer-1")
+  assert.equal(resolveCustomerId(null, "customer-2"), "customer-2")
+  assert.equal(resolveCustomerId("customer-1", "customer-1"), "customer-1")
+  assert.throws(
+    () => resolveCustomerId("customer-1", "customer-2"),
+    /clientes diferentes/
+  )
 })

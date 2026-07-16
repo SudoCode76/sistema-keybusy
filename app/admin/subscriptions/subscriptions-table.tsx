@@ -30,6 +30,7 @@ export type SubscriptionRow = {
   customerPhone: string | null
   customerPhoneE164: string | null
   customerPhoneNormalized: string | null
+  customerTelegram: string | null
   productId: string
   productName: string
   serviceName: string
@@ -144,13 +145,13 @@ export function SubscriptionsTable({
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center">
         <Input
-          aria-label="Buscar por teléfono o correo"
+          aria-label="Buscar por teléfono, Telegram o correo"
           className="md:max-w-sm"
           onChange={(event) => {
             setQuery(event.target.value)
             setPage(1)
           }}
-          placeholder="Buscar por teléfono o correo"
+          placeholder="Buscar por teléfono, Telegram o correo"
           value={query}
         />
         <Field orientation="horizontal">
@@ -231,6 +232,7 @@ export function SubscriptionsTable({
                     id: item.id,
                     customerName: item.customerName,
                     customerPhoneE164: item.customerPhoneE164,
+                    customerTelegram: item.customerTelegram,
                     productId: item.productId,
                     serviceSlug: item.serviceSlug,
                     serviceAccountId: item.serviceAccountId,

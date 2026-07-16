@@ -7,6 +7,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogForm,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -236,7 +237,7 @@ export function InventoryActions({
             <DialogTitle>Registrar renovación</DialogTitle>
             <DialogDescription>{account.label}</DialogDescription>
           </DialogHeader>
-          <form action={createCost}>
+          <DialogForm action={createCost}>
             <FieldGroup>
               <input type="hidden" name="service_account_id" value={account.id} />
               <input type="hidden" name="provider_id" value={account.provider_id ?? "none"} />
@@ -271,7 +272,7 @@ export function InventoryActions({
               </Field>
               <FormSubmitButton pendingLabel="Guardando...">Guardar renovación</FormSubmitButton>
             </FieldGroup>
-          </form>
+          </DialogForm>
         </DialogContent>
       </Dialog>
     </>

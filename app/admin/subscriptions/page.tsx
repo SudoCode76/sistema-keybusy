@@ -22,7 +22,7 @@ export default async function SubscriptionsPage() {
     supabase
       .from("products")
       .select(
-        "id, slug, name, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, services(id, slug, name)"
+        "id, slug, name, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, is_default, services(id, slug, name)"
       )
       .eq("status", "active")
       .order("name"),
@@ -35,7 +35,7 @@ export default async function SubscriptionsPage() {
       .order("label"),
     supabase
       .from("providers")
-      .select("id, name")
+      .select("id, name, phone_e164, provider_services(service_id, services(name))")
       .eq("status", "active")
       .order("name"),
     supabase
@@ -90,6 +90,7 @@ export default async function SubscriptionsPage() {
         defaultPurchaseAmount: product.default_purchase_amount ?? 0,
         defaultPurchaseCurrency: product.default_purchase_currency ?? "USDT",
         defaultPurchaseExchangeRate: product.default_purchase_exchange_rate,
+        isDefault: product.is_default,
       }
     }) ?? []
 
@@ -110,6 +111,17 @@ export default async function SubscriptionsPage() {
         ownerAssigned: usage?.ownerAssigned ?? false,
       }
     }) ?? []
+
+  const providerOptions =
+    providers?.map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      phoneE164: provider.phone_e164,
+      serviceIds: provider.provider_services.map((item) => item.service_id),
+      serviceNames: provider.provider_services
+        .map((item) => one(item.services)?.name)
+        .filter((name): name is string => Boolean(name)),
+    })) ?? []
 
   const platforms = Array.from(
     new Map(
@@ -134,7 +146,7 @@ export default async function SubscriptionsPage() {
         initialTotal={initialPage.total}
         platforms={platforms}
         products={productOptions}
-        providers={providers ?? []}
+        providers={providerOptions}
       />
     </Card>
   )

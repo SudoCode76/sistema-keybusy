@@ -14,6 +14,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogForm,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -36,7 +37,7 @@ export default async function CustomersPage() {
   const [{ data }, { data: countries }] = await Promise.all([
     supabase
       .from("customers")
-      .select("id, display_name, email, phone, phone_e164, status, notes")
+      .select("id, display_name, email, phone, phone_e164, telegram_username, status, notes")
       .order("created_at", { ascending: false }),
     supabase
       .from("countries")
@@ -54,20 +55,16 @@ export default async function CustomersPage() {
           <CardDescription>{data?.length ?? 0} registrados.</CardDescription>
         </div>
         <Dialog>
-          <DialogTrigger
-            render={
-              <Button>
-                <PlusIcon data-icon="inline-start" />
-                Nuevo cliente
-              </Button>
-            }
-          />
+          <DialogTrigger render={<Button />}>
+            <PlusIcon data-icon="inline-start" />
+            Nuevo cliente
+          </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Nuevo cliente</DialogTitle>
               <DialogDescription>Un cliente puede tener varios accesos.</DialogDescription>
             </DialogHeader>
-            <form action={createCustomer}>
+            <DialogForm action={createCustomer}>
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="display_name">Nombre</FieldLabel>
@@ -82,7 +79,6 @@ export default async function CustomersPage() {
                   <CountrySelect
                     countries={countries ?? []}
                     defaultValue={defaultCountryId}
-                    required
                   />
                 </Field>
                 <Field>
@@ -90,12 +86,20 @@ export default async function CustomersPage() {
                   <Input id="phone" name="phone" />
                 </Field>
                 <Field>
+                  <FieldLabel htmlFor="telegram_username">Telegram</FieldLabel>
+                  <Input
+                    id="telegram_username"
+                    name="telegram_username"
+                    placeholder="@usuario"
+                  />
+                </Field>
+                <Field>
                   <FieldLabel htmlFor="notes">Notas</FieldLabel>
                   <Textarea id="notes" name="notes" />
                 </Field>
                 <Button type="submit">Guardar</Button>
               </FieldGroup>
-            </form>
+            </DialogForm>
           </DialogContent>
         </Dialog>
       </CardHeader>
@@ -106,6 +110,7 @@ export default async function CustomersPage() {
               <TableHead>Nombre</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Teléfono</TableHead>
+              <TableHead>Telegram</TableHead>
               <TableHead>Estado</TableHead>
             </TableRow>
           </TableHeader>
@@ -115,6 +120,11 @@ export default async function CustomersPage() {
                 <TableCell>{customer.display_name}</TableCell>
                 <TableCell>{customer.email}</TableCell>
                 <TableCell>{customer.phone_e164 ?? customer.phone}</TableCell>
+                <TableCell>
+                  {customer.telegram_username
+                    ? `@${customer.telegram_username}`
+                    : null}
+                </TableCell>
                 <TableCell>{customer.status}</TableCell>
               </TableRow>
             ))}

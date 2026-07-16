@@ -13,6 +13,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogForm,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -66,20 +67,16 @@ export default async function CostsPage() {
           <CardDescription>Costos reales que se restan de la ganancia mensual.</CardDescription>
         </div>
         <Dialog>
-          <DialogTrigger
-            render={
-              <Button>
-              <PlusIcon data-icon="inline-start" />
-              Nuevo registro
-              </Button>
-            }
-          />
+          <DialogTrigger render={<Button />}>
+            <PlusIcon data-icon="inline-start" />
+            Nuevo registro
+          </DialogTrigger>
           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>Registrar compra o renovación</DialogTitle>
               <DialogDescription>Costo real de inventario o proveedor.</DialogDescription>
             </DialogHeader>
-            <form action={createCost}>
+            <DialogForm action={createCost}>
               <FieldGroup>
                 <Field>
                   <FieldLabel>Inventario</FieldLabel>
@@ -161,7 +158,7 @@ export default async function CostsPage() {
                 </Field>
                 <Button type="submit">Guardar registro</Button>
               </FieldGroup>
-            </form>
+            </DialogForm>
           </DialogContent>
         </Dialog>
       </CardHeader>

@@ -19,6 +19,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogForm,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -44,7 +45,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { formatDate } from "@/lib/date"
 import { money } from "@/lib/money"
-import { whatsappUrl } from "@/lib/phone"
+import { telegramUrl, whatsappUrl } from "@/lib/phone"
 
 import { FormSubmitButton } from "../accounts/form-submit-button"
 import type { AccountOption, ProductOption, ProviderOption } from "./sale-form"
@@ -59,6 +60,7 @@ type SubscriptionRow = {
   id: string
   customerName: string
   customerPhoneE164: string | null
+  customerTelegram: string | null
   productId: string
   serviceSlug: string
   serviceAccountId: string | null
@@ -240,10 +242,9 @@ export function SubscriptionActions({
       key.toLowerCase().includes("password") &&
       !["password", "platform_password", "email_password"].includes(key)
   )
-  const whatsapp = whatsappUrl(
-    subscription.customerPhoneE164,
-    `Hola ${subscription.customerName}, ¿desea renovar ${subscription.productName} que vence el ${formatDate(subscription.endsOn)}?`
-  )
+  const renewalMessage = `Hola ${subscription.customerName}, ¿desea renovar ${subscription.productName} que vence el ${formatDate(subscription.endsOn)}?`
+  const whatsapp = whatsappUrl(subscription.customerPhoneE164, renewalMessage)
+  const telegram = telegramUrl(subscription.customerTelegram, renewalMessage)
 
   return (
     <>
@@ -272,6 +273,15 @@ export function SubscriptionActions({
                 }
               >
                 WhatsApp
+              </DropdownMenuItem>
+            ) : null}
+            {telegram ? (
+              <DropdownMenuItem
+                render={
+                  <a href={telegram} rel="noreferrer" target="_blank" />
+                }
+              >
+                Telegram
               </DropdownMenuItem>
             ) : null}
             {subscription.serviceAccountId &&
@@ -922,7 +932,7 @@ export function SubscriptionActions({
               Renueva desde {formatDate(subscription.endsOn)}
             </DialogDescription>
           </DialogHeader>
-          <form action={renewSubscription}>
+          <DialogForm action={renewSubscription}>
             <FieldGroup>
               <input name="id" type="hidden" value={subscription.id} />
               <div className="grid gap-3 md:grid-cols-3">
@@ -990,7 +1000,7 @@ export function SubscriptionActions({
                 Guardar renovación
               </FormSubmitButton>
             </FieldGroup>
-          </form>
+          </DialogForm>
         </DialogContent>
       </Dialog>
     </>

@@ -10,6 +10,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogForm,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -67,20 +68,16 @@ export function NewPlatformDialog() {
 
   return (
     <Dialog>
-      <DialogTrigger
-        render={
-          <Button variant="outline">
-            <PlusIcon data-icon="inline-start" />
-            Nueva plataforma
-          </Button>
-        }
-      />
+      <DialogTrigger render={<Button variant="outline" />}>
+        <PlusIcon data-icon="inline-start" />
+        Nueva plataforma
+      </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Nueva plataforma</DialogTitle>
           <DialogDescription>Crea la plataforma y su primer ítem vendible.</DialogDescription>
         </DialogHeader>
-        <form action={createPlatformWithProduct}>
+        <DialogForm action={createPlatformWithProduct}>
           <FieldGroup>
             <div className="grid gap-3 md:grid-cols-2">
               <Field>
@@ -186,7 +183,7 @@ export function NewPlatformDialog() {
             </Field>
             <Button type="submit">Guardar plataforma</Button>
           </FieldGroup>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )

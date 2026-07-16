@@ -41,7 +41,9 @@ export type DuplicateCheck = {
   customer: {
     id: string
     name: string
-    phone: string
+    phone: string | null
+    telegramUsername: string | null
+    contact: string
     accesses: ExistingAccess[]
   } | null
   matchingSales: ExistingAccess[]
@@ -66,27 +68,72 @@ export function matchingServiceSales(
   return accesses.filter((access) => access.serviceId === serviceId)
 }
 
+export function resolveCustomerId(
+  phoneCustomerId: string | null,
+  telegramCustomerId: string | null
+) {
+  if (
+    phoneCustomerId &&
+    telegramCustomerId &&
+    phoneCustomerId !== telegramCustomerId
+  ) {
+    throw new Error(
+      "El teléfono y Telegram pertenecen a clientes diferentes"
+    )
+  }
+
+  return phoneCustomerId ?? telegramCustomerId
+}
+
 async function findCustomer(
   supabase: ServerClient,
   countryId: string | null,
-  phone: string
+  phone: string,
+  telegramUsername?: string | null
 ): Promise<DuplicateCheck["customer"]> {
-  if (!countryId || !phone.trim()) return null
-
-  const { data: phoneE164, error: phoneError } = await supabase.rpc("to_e164", {
-    country_id: countryId,
-    phone,
-  })
+  const telegram = String(telegramUsername ?? "")
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase()
+  const phoneLookup =
+    countryId && phone.trim()
+      ? supabase.rpc("to_e164", { country_id: countryId, phone })
+      : Promise.resolve({ data: null, error: null })
+  const [{ data: phoneE164, error: phoneError }, telegramResult] =
+    await Promise.all([
+      phoneLookup,
+      telegram
+        ? supabase
+            .from("customers")
+            .select("id")
+            .eq("telegram_username", telegram)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
   if (phoneError) throw phoneError
-  if (!phoneE164) return null
+  if (telegramResult.error) throw telegramResult.error
+
+  const phoneResult = phoneE164
+    ? await supabase
+        .from("customers")
+        .select("id")
+        .eq("phone_e164", phoneE164)
+        .maybeSingle()
+    : { data: null, error: null }
+  if (phoneResult.error) throw phoneResult.error
+
+  const customerId = resolveCustomerId(
+    phoneResult.data?.id ?? null,
+    telegramResult.data?.id ?? null
+  )
+  if (!customerId) return null
 
   const { data: customerRow, error: customerError } = await supabase
     .from("customers")
-    .select("id, display_name, phone, phone_e164")
-    .eq("phone_e164", phoneE164)
-    .maybeSingle()
+    .select("id, display_name, phone, phone_e164, telegram_username")
+    .eq("id", customerId)
+    .single()
   if (customerError) throw customerError
-  if (!customerRow) return null
 
   const { data: subscriptions, error: subscriptionsError } = await supabase
     .from("subscriptions")
@@ -101,7 +148,12 @@ async function findCustomer(
   return {
     id: customerRow.id,
     name: customerRow.display_name,
-    phone: customerRow.phone_e164 ?? customerRow.phone ?? phoneE164,
+    phone: customerRow.phone_e164 ?? customerRow.phone ?? null,
+    telegramUsername: customerRow.telegram_username,
+    contact:
+      customerRow.phone_e164 ??
+      customerRow.phone ??
+      `@${customerRow.telegram_username}`,
     accesses: (subscriptions ?? []).map((subscription) => {
       const product = one(subscription.products)
       const service = one(product?.services ?? null)
@@ -190,11 +242,13 @@ export async function checkSaleDuplicates(
   {
     countryId,
     phone,
+    telegramUsername,
     productSlug,
     loginEmail,
   }: {
     countryId: string | null
     phone: string
+    telegramUsername?: string | null
     productSlug: string
     loginEmail?: string | null
   }
@@ -217,7 +271,7 @@ export async function checkSaleDuplicates(
     purchaseMode: product.purchase_mode,
   }
   const [customer, privateAccount] = await Promise.all([
-    findCustomer(supabase, countryId, phone),
+    findCustomer(supabase, countryId, phone, telegramUsername),
     findPrivateAccount(supabase, { ...target, loginEmail }),
   ])
 

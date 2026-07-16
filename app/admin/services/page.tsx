@@ -2,6 +2,7 @@ import { PlusIcon } from "lucide-react"
 
 import {
   createProduct,
+  setDefaultProduct,
   setProductStatus,
   updateProductPrice,
 } from "@/app/actions"
@@ -18,6 +19,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogForm,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -75,7 +77,7 @@ export default async function ServicesPage({
       .order("name"),
     supabase
       .from("products")
-      .select("id, service_id, slug, name, product_type, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, status, services(name)")
+      .select("id, service_id, slug, name, product_type, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, is_default, status, services(name)")
       .order("name"),
   ])
   const activeServices = (services ?? []).filter((service) => service.status === "active")
@@ -95,20 +97,16 @@ export default async function ServicesPage({
           <div className="flex flex-wrap gap-2">
             <NewPlatformDialog />
             <Dialog>
-              <DialogTrigger
-                render={
-                  <Button>
-                    <PlusIcon data-icon="inline-start" />
-                    Nuevo ítem
-                  </Button>
-                }
-              />
+              <DialogTrigger render={<Button />}>
+                <PlusIcon data-icon="inline-start" />
+                Nuevo ítem
+              </DialogTrigger>
               <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>Nuevo ítem vendible</DialogTitle>
                   <DialogDescription>Lo que vendes al cliente y su precio de venta.</DialogDescription>
                 </DialogHeader>
-                <form action={createProduct}>
+                <DialogForm action={createProduct}>
                   <FieldGroup>
                     <Field>
                       <FieldLabel>Plataforma</FieldLabel>
@@ -250,7 +248,7 @@ export default async function ServicesPage({
                     </Field>
                     <Button type="submit">Guardar ítem</Button>
                   </FieldGroup>
-                </form>
+                </DialogForm>
               </DialogContent>
             </Dialog>
           </div>
@@ -274,7 +272,14 @@ export default async function ServicesPage({
 
                 return (
                   <TableRow key={product.id}>
-                    <TableCell>{product.name}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {product.name}
+                        {product.is_default ? (
+                          <Badge variant="outline">Predeterminado</Badge>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell>{one(product.services)?.name}</TableCell>
                     <TableCell>{productTypeItems[product.product_type as keyof typeof productTypeItems] ?? product.product_type}</TableCell>
                     <TableCell>
@@ -291,20 +296,26 @@ export default async function ServicesPage({
                     <TableCell><Badge variant="secondary">{product.status}</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        {product.status === "active" && !product.is_default ? (
+                          <form action={setDefaultProduct}>
+                            <input name="id" type="hidden" value={product.id} />
+                            <Button size="sm" variant="secondary">
+                              Predeterminar
+                            </Button>
+                          </form>
+                        ) : null}
                         <Dialog>
                           <DialogTrigger
-                            render={
-                              <Button size="sm" variant="outline">
-                                Editar
-                              </Button>
-                            }
-                          />
+                            render={<Button size="sm" variant="outline" />}
+                          >
+                            Editar
+                          </DialogTrigger>
                           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
                             <DialogHeader>
                               <DialogTitle>Editar ítem</DialogTitle>
                               <DialogDescription>{product.name}</DialogDescription>
                             </DialogHeader>
-                            <form action={updateProductPrice}>
+                            <DialogForm action={updateProductPrice}>
                               <FieldGroup>
                                 <input name="id" type="hidden" value={product.id} />
                                 <div className="grid gap-3 md:grid-cols-3">
@@ -478,7 +489,7 @@ export default async function ServicesPage({
                                 </Field>
                                 <Button type="submit">Guardar cambios</Button>
                               </FieldGroup>
-                            </form>
+                            </DialogForm>
                           </DialogContent>
                         </Dialog>
                         <form action={setProductStatus}>

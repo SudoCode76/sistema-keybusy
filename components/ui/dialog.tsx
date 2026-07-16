@@ -7,8 +7,23 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+const DialogActionsContext = React.createContext<
+  React.RefObject<DialogPrimitive.Root.Actions | null> | undefined
+>(undefined)
+
+function Dialog({ actionsRef, ...props }: DialogPrimitive.Root.Props) {
+  const internalActionsRef = React.useRef<DialogPrimitive.Root.Actions>(null)
+  const resolvedActionsRef = actionsRef ?? internalActionsRef
+
+  return (
+    <DialogActionsContext.Provider value={resolvedActionsRef}>
+      <DialogPrimitive.Root
+        actionsRef={resolvedActionsRef}
+        data-slot="dialog"
+        {...props}
+      />
+    </DialogActionsContext.Provider>
+  )
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -146,12 +161,32 @@ function DialogDescription({
   )
 }
 
+function DialogForm({
+  action,
+  ...props
+}: Omit<React.ComponentProps<"form">, "action"> & {
+  action: (formData: FormData) => Promise<void>
+}) {
+  const actionsRef = React.useContext(DialogActionsContext)
+
+  return (
+    <form
+      action={async (formData) => {
+        await action(formData)
+        actionsRef?.current?.close()
+      }}
+      {...props}
+    />
+  )
+}
+
 export {
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
+  DialogForm,
   DialogHeader,
   DialogOverlay,
   DialogPortal,

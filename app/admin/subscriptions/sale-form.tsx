@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useCallback, useEffect, useState } from "react"
+import { useActionState, useCallback, useEffect, useRef, useState } from "react"
 import { PlusIcon } from "lucide-react"
 
 import { createQuickProvider, createSale } from "@/app/actions"
@@ -38,6 +38,10 @@ import { ManagedEmailPicker } from "@/components/managed-email-picker"
 import { Spinner } from "@/components/ui/spinner"
 import { money } from "@/lib/money"
 import { formatDate } from "@/lib/date"
+import {
+  isValidTelegramUsername,
+  normalizeTelegramUsername,
+} from "@/lib/phone"
 import { cn } from "@/lib/utils"
 
 import type { DuplicateCheck } from "./duplicate-check"
@@ -63,6 +67,7 @@ export type ProductOption = {
   defaultPurchaseAmount: number
   defaultPurchaseCurrency: "BOB" | "USDT"
   defaultPurchaseExchangeRate: number | null
+  isDefault: boolean
 }
 
 export type AccountOption = {
@@ -78,6 +83,9 @@ export type AccountOption = {
 export type ProviderOption = {
   id: string
   name: string
+  phoneE164: string | null
+  serviceIds: string[]
+  serviceNames: string[]
 }
 
 export type CountryOption = {
@@ -175,21 +183,29 @@ function QuickProviderDialog({
   product: ProductOption | undefined
 }) {
   const [state, action, pending] = useActionState(createQuickProvider, {})
+  const handledProviderId = useRef<string | null>(null)
 
   useEffect(() => {
-    if (state.provider) onSaved(state.provider)
-  }, [onSaved, state.provider])
+    if (
+      state.provider &&
+      product &&
+      handledProviderId.current !== state.provider.id
+    ) {
+      handledProviderId.current = state.provider.id
+      onSaved({
+        ...state.provider,
+        serviceIds: [product.serviceId],
+        serviceNames: [product.serviceName],
+      })
+    }
+  }, [onSaved, product, state.provider])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger
-        render={
-          <Button type="button" variant="outline">
-            <PlusIcon data-icon="inline-start" />
-            Nuevo
-          </Button>
-        }
-      />
+      <DialogTrigger render={<Button type="button" variant="outline" />}>
+        <PlusIcon data-icon="inline-start" />
+        Nuevo
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nuevo proveedor</DialogTitle>
@@ -257,6 +273,7 @@ export function SaleForm({
     defaultCountryId ?? countries[0]?.id ?? ""
   )
   const [phone, setPhone] = useState("")
+  const [telegramUsername, setTelegramUsername] = useState("")
   const [loginEmail, setLoginEmail] = useState("")
   const [invitationEmail, setInvitationEmail] = useState("")
   const [emailPassword, setEmailPassword] = useState("")
@@ -280,7 +297,6 @@ export function SaleForm({
     initialSharedAccount?.label ?? ""
   )
   const [providerId, setProviderId] = useState("none")
-  const [providerLabel, setProviderLabel] = useState("Ninguno")
   const [providerOptions, setProviderOptions] = useState(providers)
   const [providerDialogOpen, setProviderDialogOpen] = useState(false)
   const [accountMode, setAccountMode] = useState<"new" | "existing">("new")
@@ -368,9 +384,18 @@ export function SaleForm({
     )
   const defaultStartDate = todayDate()
   const accountEmail = loginEmail.trim() || invitationEmail.trim()
+  const normalizedTelegram = normalizeTelegramUsername(telegramUsername)
+  const telegramInvalid =
+    Boolean(telegramUsername.trim()) &&
+    !isValidTelegramUsername(telegramUsername)
+  const contactInvalid = !phone.trim() && !normalizedTelegram
+  const matchingProviderOptions = providerOptions.filter((provider) =>
+    provider.serviceIds.includes(selectedProduct?.serviceId ?? "")
+  )
   const currentConflict =
     state.conflict?.productSlug === productSlug &&
     state.conflict.phone === phone.trim() &&
+    state.conflict.telegramUsername === normalizedTelegram &&
     state.conflict.countryId === countryId &&
     (state.conflict.kind !== "private_account" || accountMode === "new") &&
     (!state.conflict.loginEmail ||
@@ -403,24 +428,35 @@ export function SaleForm({
     (provider: ProviderOption) => {
       setProviderOptions((current) =>
         [...current.filter((item) => item.id !== provider.id), provider].sort(
-          (a, b) => a.name.localeCompare(b.name)
+          (a, b) =>
+            (a.phoneE164 ?? a.name).localeCompare(b.phoneE164 ?? b.name)
         )
       )
       setProviderId(provider.id)
-      setProviderLabel(provider.name)
       setProviderDialogOpen(false)
     },
-    [setProviderDialogOpen, setProviderId, setProviderLabel, setProviderOptions]
+    [setProviderDialogOpen, setProviderId, setProviderOptions]
   )
 
   useEffect(() => {
-    if (!countryId || phone.replace(/\D/g, "").length < 4) {
+    const hasPhone = Boolean(
+      countryId && phone.replace(/\D/g, "").length >= 4
+    )
+    const hasTelegram = isValidTelegramUsername(telegramUsername)
+    if (!hasPhone && !hasTelegram) {
       return
     }
 
     const controller = new AbortController()
     const timeout = window.setTimeout(async () => {
-      const params = new URLSearchParams({ countryId, phone, productSlug })
+      const params = new URLSearchParams({ productSlug })
+      if (hasPhone) {
+        params.set("countryId", countryId)
+        params.set("phone", phone)
+      }
+      if (hasTelegram) {
+        params.set("telegramUsername", normalizedTelegram)
+      }
       if (canReuseIndividual && accountMode === "new" && accountEmail) {
         params.set("loginEmail", accountEmail)
       }
@@ -448,8 +484,10 @@ export function SaleForm({
     accountEmail,
     canReuseIndividual,
     countryId,
+    normalizedTelegram,
     phone,
     productSlug,
+    telegramUsername,
   ])
 
   function selectProduct(slug: string) {
@@ -471,7 +509,6 @@ export function SaleForm({
     setInvitationEmail("")
     setEmailPassword("")
     setProviderId("none")
-    setProviderLabel("Ninguno")
     setManagedEmailMode("new")
     setDuration(String(product?.defaultDurationMonths ?? 1))
     setPrice(String(product?.defaultPriceAmount ?? 0))
@@ -479,6 +516,48 @@ export function SaleForm({
     setPurchaseAmount(String(product?.defaultPurchaseAmount ?? 0))
     setPurchaseCurrency(product?.defaultPurchaseCurrency ?? "USDT")
   }
+
+  const salePricingFields = (
+    <>
+      <Field>
+        <FieldLabel htmlFor="current_price_amount">Precio mensual</FieldLabel>
+        <Input
+          id="current_price_amount"
+          name="current_price_amount"
+          type="number"
+          step="0.01"
+          value={price}
+          onChange={(event) => setPrice(event.target.value)}
+        />
+        <FieldDescription>
+          Total:{" "}
+          {money(Number(price || 0) * Number(duration || 0), priceCurrency)}
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel>Moneda</FieldLabel>
+        <Select
+          name="current_price_currency"
+          value={priceCurrency}
+          onValueChange={(value) => {
+            if (value === "BOB" || value === "USDT") {
+              setPriceCurrency(value)
+            }
+          }}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="BOB">BOB</SelectItem>
+              <SelectItem value="USDT">USDT</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </Field>
+    </>
+  )
 
   return (
     <form action={action}>
@@ -500,7 +579,7 @@ export function SaleForm({
           <Alert>
             <AlertTitle>
               Cliente existente: {currentDuplicateCheck.customer.name} ·{" "}
-              {currentDuplicateCheck.customer.phone}
+              {currentDuplicateCheck.customer.contact}
             </AlertTitle>
             <AlertDescription className="flex flex-col gap-2">
               {currentDuplicateCheck.customer.accesses.length > 0 ? (
@@ -531,7 +610,8 @@ export function SaleForm({
         {liveActiveMatches.length > 0 ? (
           <Alert variant="destructive">
             <AlertTitle>
-              El número {currentDuplicateCheck?.customer?.phone ?? phone} ya
+              El contacto {currentDuplicateCheck?.customer?.contact ??
+                (phone || `@${normalizedTelegram}`)} ya
               tiene {currentDuplicateCheck?.target.serviceName}
             </AlertTitle>
             <AlertDescription className="flex flex-col gap-2">
@@ -552,7 +632,8 @@ export function SaleForm({
         {liveExpiredMatch ? (
           <Alert variant="destructive">
             <AlertTitle>
-              El número {currentDuplicateCheck?.customer?.phone ?? phone} ya
+              El contacto {currentDuplicateCheck?.customer?.contact ??
+                (phone || `@${normalizedTelegram}`)} ya
               tiene {currentDuplicateCheck?.target.serviceName} vencido
             </AlertTitle>
             <AlertDescription className="flex flex-col gap-2">
@@ -571,7 +652,7 @@ export function SaleForm({
 
         <FieldSet>
           <FieldLegend>Cliente y producto</FieldLegend>
-          <FieldGroup className="grid gap-3 md:grid-cols-[8rem_minmax(12rem,1fr)_minmax(20rem,2fr)]">
+          <FieldGroup className="grid gap-3 lg:grid-cols-[8rem_minmax(11rem,1fr)_minmax(12rem,1fr)_minmax(20rem,2fr)]">
             <Field>
               <FieldLabel>País</FieldLabel>
               <CountrySelect
@@ -582,10 +663,10 @@ export function SaleForm({
                   setCountryId(value)
                   setDuplicateCheck(null)
                 }}
-                required
+                required={Boolean(phone.trim())}
               />
             </Field>
-            <Field>
+            <Field data-invalid={contactInvalid}>
               <FieldLabel htmlFor="phone">Teléfono</FieldLabel>
               <Input
                 id="phone"
@@ -595,9 +676,28 @@ export function SaleForm({
                   setDuplicateCheck(null)
                 }}
                 placeholder="Ej. 76543210"
-                required
+                aria-invalid={contactInvalid}
                 value={phone}
               />
+            </Field>
+            <Field data-invalid={telegramInvalid || contactInvalid}>
+              <FieldLabel htmlFor="telegram_username">Telegram</FieldLabel>
+              <Input
+                aria-invalid={telegramInvalid || contactInvalid}
+                id="telegram_username"
+                name="telegram_username"
+                onChange={(event) => {
+                  setTelegramUsername(event.target.value)
+                  setDuplicateCheck(null)
+                }}
+                placeholder="@usuario"
+                value={telegramUsername}
+              />
+              {telegramInvalid ? (
+                <FieldDescription>
+                  Usa 5–32 letras, números o guion bajo.
+                </FieldDescription>
+              ) : null}
             </Field>
             <Field>
               <FieldLabel>Ítem vendible</FieldLabel>
@@ -639,6 +739,7 @@ export function SaleForm({
           <FieldLegend>Acceso</FieldLegend>
           <FieldGroup
             className={cn(
+              canReuseIndividual && "grid gap-3 md:grid-cols-2",
               isSpotify &&
                 "grid gap-3 lg:grid-cols-[minmax(10rem,0.8fr)_minmax(18rem,1.6fr)_minmax(18rem,1.2fr)]"
             )}
@@ -831,25 +932,19 @@ export function SaleForm({
                 <input name="provider_id" type="hidden" value={providerId} />
                 <div className="flex gap-2">
                   <Select
-                    value={providerLabel}
-                    onValueChange={(value) => {
-                      const provider = providerOptions.find(
-                        (item) => item.name === value
-                      )
-
-                      setProviderId(provider?.id ?? "none")
-                      setProviderLabel(provider?.name ?? "Ninguno")
-                    }}
+                    value={providerId}
+                    onValueChange={(value) => setProviderId(value ?? "none")}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Seleccionar proveedor" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        <SelectItem value="Ninguno">Ninguno</SelectItem>
-                        {providerOptions.map((provider) => (
-                          <SelectItem key={provider.id} value={provider.name}>
-                            {provider.name}
+                        <SelectItem value="none">Ninguno</SelectItem>
+                        {matchingProviderOptions.map((provider) => (
+                          <SelectItem key={provider.id} value={provider.id}>
+                            {provider.phoneE164 ?? provider.name} ·{" "}
+                            {provider.serviceNames.join(", ")}
                           </SelectItem>
                         ))}
                       </SelectGroup>
@@ -867,18 +962,45 @@ export function SaleForm({
               </Field>
             ) : null}
 
-            <FieldGroup className={cn(isSpotify && "lg:col-span-3")}>
-              {createsInventoryOnSale ? (
-                <Field>
-                  <FieldLabel htmlFor="account_label">
-                    {copy.accountLabelField ?? "Nombre interno de la cuenta"}
-                  </FieldLabel>
-                  <Input
-                    id="account_label"
-                    name="account_label"
-                    placeholder="Cuenta cliente X"
-                  />
-                </Field>
+            <FieldGroup
+              className={cn(
+                canReuseIndividual && "md:col-span-2",
+                isSpotify && "lg:col-span-3"
+              )}
+            >
+              {createsInventoryOnSale || copy.invitationEmailLabel ? (
+                <FieldGroup className="grid gap-3 md:grid-cols-2">
+                  {createsInventoryOnSale ? (
+                    <Field>
+                      <FieldLabel htmlFor="account_label">
+                        {copy.accountLabelField ??
+                          "Nombre interno de la cuenta"}
+                      </FieldLabel>
+                      <Input
+                        id="account_label"
+                        name="account_label"
+                        placeholder="Cuenta cliente X"
+                      />
+                    </Field>
+                  ) : null}
+                  {copy.invitationEmailLabel ? (
+                    <Field>
+                      <FieldLabel htmlFor="invitation_email">
+                        {copy.invitationEmailLabel}
+                      </FieldLabel>
+                      <Input
+                        id="invitation_email"
+                        name="invitation_email"
+                        onChange={(event) => {
+                          setInvitationEmail(event.target.value)
+                          setDuplicateCheck(null)
+                        }}
+                        type="email"
+                        value={invitationEmail}
+                      />
+                    </Field>
+                  ) : null}
+                </FieldGroup>
               ) : null}
 
               {isSpotify && spotifySeatType === SPOTIFY_OWNER ? (
@@ -915,44 +1037,31 @@ export function SaleForm({
                 />
               ) : null}
 
-              <FieldGroup className="grid gap-3 md:grid-cols-2">
-                {copy.invitationEmailLabel ? (
-                  <Field>
-                    <FieldLabel htmlFor="invitation_email">
-                      {copy.invitationEmailLabel}
-                    </FieldLabel>
-                    <Input
-                      id="invitation_email"
-                      name="invitation_email"
-                      onChange={(event) => {
-                        setInvitationEmail(event.target.value)
-                        setDuplicateCheck(null)
-                      }}
-                      type="email"
-                      value={invitationEmail}
-                    />
-                  </Field>
-                ) : null}
-                {copy.profileLabel && !isSpotify ? (
-                  <Field>
-                    <FieldLabel htmlFor="profile_label">
-                      {copy.profileLabel}
-                    </FieldLabel>
-                    <Input
-                      id="profile_label"
-                      name="profile_label"
-                      placeholder="Perfil 1"
-                    />
-                  </Field>
-                ) : null}
-                {configuredFields.has("two_factor_url") &&
-                createsInventoryOnSale ? (
-                  <Field>
-                    <FieldLabel htmlFor="two_factor_url">Link 2FA</FieldLabel>
-                    <Input id="two_factor_url" name="two_factor_url" />
-                  </Field>
-                ) : null}
-              </FieldGroup>
+              {copy.profileLabel ||
+              (configuredFields.has("two_factor_url") &&
+                createsInventoryOnSale) ? (
+                <FieldGroup className="grid gap-3 md:grid-cols-2">
+                  {copy.profileLabel && !isSpotify ? (
+                    <Field>
+                      <FieldLabel htmlFor="profile_label">
+                        {copy.profileLabel}
+                      </FieldLabel>
+                      <Input
+                        id="profile_label"
+                        name="profile_label"
+                        placeholder="Perfil 1"
+                      />
+                    </Field>
+                  ) : null}
+                  {configuredFields.has("two_factor_url") &&
+                  createsInventoryOnSale ? (
+                    <Field>
+                      <FieldLabel htmlFor="two_factor_url">Link 2FA</FieldLabel>
+                      <Input id="two_factor_url" name="two_factor_url" />
+                    </Field>
+                  ) : null}
+                </FieldGroup>
+              ) : null}
 
               {liveAccountConflict ? (
                 <Alert
@@ -1009,7 +1118,7 @@ export function SaleForm({
         {createsInventoryOnSale ? (
           <FieldSet>
             <FieldLegend>Compra de la cuenta</FieldLegend>
-            <FieldGroup className="grid gap-3 md:grid-cols-2">
+            <FieldGroup className="grid gap-3 md:grid-cols-4">
               <Field>
                 <FieldLabel htmlFor="purchase_amount">
                   Precio de compra
@@ -1045,13 +1154,19 @@ export function SaleForm({
                   </SelectContent>
                 </Select>
               </Field>
+              {salePricingFields}
             </FieldGroup>
           </FieldSet>
         ) : null}
 
         <FieldSet>
           <FieldLegend>Venta</FieldLegend>
-          <FieldGroup className="grid gap-3 md:grid-cols-4">
+          <FieldGroup
+            className={cn(
+              "grid gap-3",
+              createsInventoryOnSale ? "md:grid-cols-2" : "md:grid-cols-4"
+            )}
+          >
             <Field>
               <FieldLabel htmlFor="starts_on">Inicio</FieldLabel>
               <Input
@@ -1072,48 +1187,7 @@ export function SaleForm({
                 onChange={(event) => setDuration(event.target.value)}
               />
             </Field>
-            <Field>
-              <FieldLabel htmlFor="current_price_amount">
-                Precio mensual
-              </FieldLabel>
-              <Input
-                id="current_price_amount"
-                name="current_price_amount"
-                type="number"
-                step="0.01"
-                value={price}
-                onChange={(event) => setPrice(event.target.value)}
-              />
-              <FieldDescription>
-                Total:{" "}
-                {money(
-                  Number(price || 0) * Number(duration || 0),
-                  priceCurrency
-                )}
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel>Moneda</FieldLabel>
-              <Select
-                name="current_price_currency"
-                value={priceCurrency}
-                onValueChange={(value) => {
-                  if (value === "BOB" || value === "USDT") {
-                    setPriceCurrency(value)
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="BOB">BOB</SelectItem>
-                    <SelectItem value="USDT">USDT</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+            {createsInventoryOnSale ? null : salePricingFields}
           </FieldGroup>
         </FieldSet>
 
@@ -1122,6 +1196,8 @@ export function SaleForm({
           <Button
             disabled={
               pending ||
+              contactInvalid ||
+              telegramInvalid ||
               spotifySelectionInvalid ||
               !!liveAccountConflict ||
               !!liveExpiredMatch
@@ -1138,6 +1214,8 @@ export function SaleForm({
             type="submit"
             disabled={
               pending ||
+              contactInvalid ||
+              telegramInvalid ||
               spotifySelectionInvalid ||
               !!liveAccountConflict ||
               !!liveExpiredMatch ||

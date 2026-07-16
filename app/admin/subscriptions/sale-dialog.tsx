@@ -24,7 +24,10 @@ export function SaleDialog(props: SaleFormProps) {
         <PlusIcon data-icon="inline-start" />
         Nueva venta
       </DialogTrigger>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
+      <DialogContent
+        className="max-h-[92vh] overflow-y-auto sm:max-w-5xl"
+        initialFocus={() => document.getElementById("phone")}
+      >
         <DialogHeader>
           <DialogTitle>Nueva venta</DialogTitle>
           <DialogDescription>

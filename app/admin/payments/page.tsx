@@ -13,6 +13,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogForm,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -72,20 +73,16 @@ export default async function PaymentsPage() {
           <CardDescription>Clientes nuevos, renovaciones y ajustes.</CardDescription>
         </div>
         <Dialog>
-          <DialogTrigger
-            render={
-              <Button>
-                <PlusIcon data-icon="inline-start" />
-                Nuevo pago
-              </Button>
-            }
-          />
+          <DialogTrigger render={<Button />}>
+            <PlusIcon data-icon="inline-start" />
+            Nuevo pago
+          </DialogTrigger>
           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>Registrar pago</DialogTitle>
               <DialogDescription>Usa tipo de cambio histórico del pago.</DialogDescription>
             </DialogHeader>
-            <form action={createPayment}>
+            <DialogForm action={createPayment}>
               <FieldGroup>
                 <Field>
                   <FieldLabel>Cliente</FieldLabel>
@@ -170,7 +167,7 @@ export default async function PaymentsPage() {
                 </Field>
                 <Button type="submit">Guardar pago</Button>
               </FieldGroup>
-            </form>
+            </DialogForm>
           </DialogContent>
         </Dialog>
       </CardHeader>

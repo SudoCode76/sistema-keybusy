@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { DialogForm } from "@/components/ui/dialog"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { ManagedEmailPicker } from "@/components/managed-email-picker"
@@ -185,7 +186,7 @@ export function InventoryForm({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form action={account ? updateServiceAccount : createServiceAccount}>
+        <DialogForm action={account ? updateServiceAccount : createServiceAccount}>
           <FieldGroup>
             {account ? (
               <input name="id" type="hidden" value={account.id} />
@@ -394,7 +395,7 @@ export function InventoryForm({
               label={account ? "Guardar cambios" : "Guardar inventario"}
             />
           </FieldGroup>
-        </form>
+        </DialogForm>
       </CardContent>
     </Card>
   )

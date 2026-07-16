@@ -5,11 +5,16 @@ import { redirect } from "next/navigation"
 
 import {
   checkSaleDuplicates,
+  resolveCustomerId,
   type DuplicateCheck,
 } from "@/app/admin/subscriptions/duplicate-check"
 import { requireAdmin, requireUser } from "@/lib/auth"
 import { fetchBinanceAverage } from "@/lib/binance"
 import { formNumber, formText, toMoneyValues, type Currency } from "@/lib/money"
+import {
+  isValidTelegramUsername,
+  normalizeTelegramUsername,
+} from "@/lib/phone"
 import { createClient } from "@/lib/supabase/server"
 
 type AuthState = {
@@ -22,7 +27,8 @@ type SaleState = {
     kind: "active_sale" | "expired_sale" | "private_account"
     productSlug: string
     phone: string
-    countryId: string
+    telegramUsername: string
+    countryId: string | null
     loginEmail?: string
     message: string
     check: DuplicateCheck
@@ -41,6 +47,7 @@ export type ProviderState = {
   provider?: {
     id: string
     name: string
+    phoneE164: string | null
   }
 }
 
@@ -436,8 +443,21 @@ export async function claimFirstAdmin() {
 export async function createCustomer(formData: FormData) {
   const { supabase } = await requireAdmin()
   const phone = formText(formData.get("phone"))
-  const countryId = formText(formData.get("country_id"))
-  let existingId: string | null = null
+  const telegramRaw = formText(formData.get("telegram_username"))
+  const telegramUsername = normalizeTelegramUsername(telegramRaw)
+  const countryId = phone ? formText(formData.get("country_id")) : null
+  let phoneCustomerId: string | null = null
+  let telegramCustomerId: string | null = null
+
+  if (!phone && !telegramUsername) {
+    throw new Error("Ingresa un teléfono o un usuario de Telegram")
+  }
+  if (telegramRaw && !isValidTelegramUsername(telegramRaw)) {
+    throw new Error(
+      "Telegram debe tener entre 5 y 32 letras, números o guion bajo"
+    )
+  }
+  if (phone && !countryId) throw new Error("Pais es obligatorio")
 
   if (phone && countryId) {
     const { data: phoneE164, error: phoneError } = await supabase.rpc(
@@ -463,15 +483,27 @@ export async function createCustomer(formData: FormData) {
         throw existingError
       }
 
-      existingId = existing?.id ?? null
+      phoneCustomerId = existing?.id ?? null
     }
   }
+
+  if (telegramUsername) {
+    const { data: existing, error: existingError } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("telegram_username", telegramUsername)
+      .maybeSingle()
+    if (existingError) throw existingError
+    telegramCustomerId = existing?.id ?? null
+  }
+
+  const existingId = resolveCustomerId(phoneCustomerId, telegramCustomerId)
 
   const values = {
     display_name: requireValue(formData.get("display_name"), "Cliente"),
     email: formText(formData.get("email")),
-    phone,
-    country_id: countryId,
+    ...(phone ? { phone, country_id: countryId } : {}),
+    ...(telegramUsername ? { telegram_username: telegramUsername } : {}),
     notes: formText(formData.get("notes")),
   }
 
@@ -514,7 +546,7 @@ async function insertProviderFromForm(
     formText(formData.get("name")) ??
     `+${country.dial_code}${phone.replace(/\D/g, "")}`
 
-  const provider = await insertOrThrow<{ id: string }>(
+  const provider = await insertOrThrow<{ id: string; phone_e164: string | null }>(
     supabase
       .from("providers")
       .insert({
@@ -523,7 +555,7 @@ async function insertProviderFromForm(
         phone,
         notes: formText(formData.get("notes")),
       })
-      .select("id")
+      .select("id, phone_e164")
       .single()
   )
 
@@ -541,7 +573,7 @@ async function insertProviderFromForm(
       .single()
   )
 
-  return { id: provider.id, name: providerName }
+  return { id: provider.id, name: providerName, phoneE164: provider.phone_e164 }
 }
 
 export async function createProvider(formData: FormData) {
@@ -790,6 +822,18 @@ export async function setProductStatus(formData: FormData) {
       .select("id")
       .single()
   )
+
+  revalidatePath("/admin/services")
+  revalidatePath("/admin/subscriptions")
+}
+
+export async function setDefaultProduct(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const { error } = await supabase.rpc("set_default_product", {
+    p_product_id: requireValue(formData.get("id"), "Producto"),
+  })
+
+  if (error) throw new Error(error.message)
 
   revalidatePath("/admin/services")
   revalidatePath("/admin/subscriptions")
@@ -1379,8 +1423,20 @@ export async function createSale(
   const priceAmount = formText(formData.get("current_price_amount"))
   const productSlug = requireValue(formData.get("product_slug"), "Servicio")
   const existingAccountId = optionalId(formData.get("service_account_id"))
-  const countryId = requireValue(formData.get("country_id"), "Pais")
-  const phone = requireValue(formData.get("phone"), "Telefono")
+  const phone = formText(formData.get("phone")) ?? ""
+  const telegramRaw = formText(formData.get("telegram_username"))
+  const telegramUsername = normalizeTelegramUsername(telegramRaw)
+  const countryId = phone
+    ? requireValue(formData.get("country_id"), "Pais")
+    : null
+  if (!phone && !telegramUsername) {
+    return { error: "Ingresa un teléfono o un usuario de Telegram" }
+  }
+  if (telegramRaw && !isValidTelegramUsername(telegramRaw)) {
+    return {
+      error: "Telegram debe tener entre 5 y 32 letras, números o guion bajo",
+    }
+  }
   let managedEmail: ManagedEmail | null = null
   try {
     managedEmail = await selectedManagedEmail(supabase, formData)
@@ -1442,6 +1498,7 @@ export async function createSale(
     duplicateCheck = await checkSaleDuplicates(supabase, {
       countryId,
       phone,
+      telegramUsername,
       productSlug,
       loginEmail: existingAccountId ? null : accountEmail,
     })
@@ -1456,6 +1513,7 @@ export async function createSale(
   const conflictContext = {
     productSlug,
     phone: phone.trim(),
+    telegramUsername,
     countryId,
     loginEmail: accountEmail?.trim().toLowerCase(),
   }
@@ -1495,7 +1553,7 @@ export async function createSale(
         ...conflictContext,
         check: duplicateCheck,
         kind: "active_sale",
-        message: `El número ${duplicateCheck.customer?.phone ?? phone} ya tiene ${duplicateCheck.target.serviceName}.`,
+        message: `El contacto ${duplicateCheck.customer?.contact ?? (phone || `@${telegramUsername}`)} ya tiene ${duplicateCheck.target.serviceName}.`,
       },
     }
   }
@@ -1509,7 +1567,7 @@ export async function createSale(
         ...conflictContext,
         check: duplicateCheck,
         kind: "expired_sale",
-        message: `El número ${duplicateCheck.customer?.phone ?? phone} ya tiene ${duplicateCheck.target.serviceName} vencido. Renueva el acceso existente.`,
+        message: `El contacto ${duplicateCheck.customer?.contact ?? (phone || `@${telegramUsername}`)} ya tiene ${duplicateCheck.target.serviceName} vencido. Renueva el acceso existente.`,
       },
     }
   }
@@ -1657,7 +1715,7 @@ export async function createSale(
         label:
           formText(formData.get("account_label")) ??
           accountEmail ??
-          `${product.name} ${formText(formData.get("phone")) ?? ""}`.trim(),
+          `${product.name} ${phone || `@${telegramUsername}`}`.trim(),
         login_email: accountEmail,
         base_cost_amount: purchaseAmount,
         base_cost_currency: purchaseCurrency,
@@ -1676,6 +1734,7 @@ export async function createSale(
           const latestCheck = await checkSaleDuplicates(supabase, {
             countryId,
             phone,
+            telegramUsername,
             productSlug,
             loginEmail: accountEmail,
           })
@@ -1738,6 +1797,7 @@ export async function createSale(
     "create_sale_with_email",
     {
       p_phone: phone,
+      p_telegram_username: telegramUsername,
       p_country_id: countryId,
       p_product_slug: productSlug,
       p_service_account_id: saleAccountId,

@@ -28,7 +28,7 @@ export async function getSubscriptionsPage(
   let productIds: string[] | null = null
   let subscriptionQuery = supabase
     .from("subscriptions")
-    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, notes, customers(display_name, phone, phone_e164, phone_normalized), products(id, slug, name, services(slug, name)), service_accounts(label, login_email, username, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields)", { count: "exact" })
+    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, notes, customers(display_name, phone, phone_e164, phone_normalized, telegram_username), products(id, slug, name, services(slug, name)), service_accounts(label, login_email, username, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields)", { count: "exact" })
 
   subscriptionQuery = showCanceled
     ? subscriptionQuery.in("status", ["canceled", "inactive"])
@@ -65,6 +65,7 @@ export async function getSubscriptionsPage(
   const search = query.replace(/[(),%]/g, "").trim()
   if (search) {
     const pattern = `%${search}%`
+    const telegramPattern = `%${search.replace(/^@/, "").toLowerCase()}%`
     const phoneSearch = /^\+?[\d\s-]+$/.test(search)
       ? search.replace(/\D/g, "")
       : ""
@@ -72,6 +73,7 @@ export async function getSubscriptionsPage(
       `phone.ilike.${pattern}`,
       `phone_e164.ilike.${pattern}`,
       `phone_normalized.ilike.${pattern}`,
+      `telegram_username.ilike.${telegramPattern}`,
     ]
     if (phoneSearch) {
       const phonePattern = `%${phoneSearch}%`
@@ -158,6 +160,7 @@ export async function getSubscriptionsPage(
       customerPhone: customer?.phone ?? null,
       customerPhoneE164: customer?.phone_e164 ?? null,
       customerPhoneNormalized: customer?.phone_normalized ?? null,
+      customerTelegram: customer?.telegram_username ?? null,
       productId: subscription.product_id,
       productName: product?.name ?? "Item",
       serviceName: service?.name ?? "Servicio",

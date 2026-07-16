@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
       await checkSaleDuplicates(supabase, {
         countryId: params.get("countryId"),
         phone: params.get("phone") ?? "",
+        telegramUsername: params.get("telegramUsername"),
         productSlug: params.get("productSlug") ?? "",
         loginEmail: params.get("loginEmail"),
       })
