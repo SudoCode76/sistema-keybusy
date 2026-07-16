@@ -17,7 +17,24 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { requireUser } from "@/lib/auth"
+import { formatDate } from "@/lib/date"
 import { money } from "@/lib/money"
+
+function visibleDetails(item: {
+  login_email?: string | null
+  login_password?: string | null
+  email_password?: string | null
+  invitation_email?: string | null
+  access_notes?: string | null
+}) {
+  return [
+    item.login_email ? `Correo: ${item.login_email}` : null,
+    item.login_password ? `Clave: ${item.login_password}` : null,
+    item.email_password ? `Clave correo: ${item.email_password}` : null,
+    item.invitation_email ? `Invitacion: ${item.invitation_email}` : null,
+    item.access_notes ? `Notas: ${item.access_notes}` : null,
+  ].filter(Boolean)
+}
 
 export default async function PortalPage() {
   const { supabase, profile } = await requireUser()
@@ -53,22 +70,38 @@ export default async function PortalPage() {
                   <TableHead>Servicio</TableHead>
                   <TableHead>Producto</TableHead>
                   <TableHead>Perfil</TableHead>
+                  <TableHead>Datos visibles</TableHead>
                   <TableHead>Finaliza</TableHead>
                   <TableHead>Precio</TableHead>
                   <TableHead>Estado</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(data ?? []).map((item) => (
-                  <TableRow key={item.subscription_id}>
-                    <TableCell>{item.service_name}</TableCell>
-                    <TableCell>{item.product_name}</TableCell>
-                    <TableCell>{item.slot_label}</TableCell>
-                    <TableCell>{item.ends_on}</TableCell>
-                    <TableCell>{money(item.current_price_amount, item.current_price_currency ?? "BOB")}</TableCell>
-                    <TableCell><Badge variant="secondary">{item.status}</Badge></TableCell>
-                  </TableRow>
-                ))}
+                {(data ?? []).map((item) => {
+                  const details = visibleDetails(item)
+
+                  return (
+                    <TableRow key={item.subscription_id}>
+                      <TableCell>{item.service_name}</TableCell>
+                      <TableCell>{item.product_name}</TableCell>
+                      <TableCell>{item.profile_label ?? item.slot_label}</TableCell>
+                      <TableCell>
+                        {details.length > 0 ? (
+                          <div className="grid gap-1 text-xs text-muted-foreground">
+                            {details.map((detail) => (
+                              <span key={detail}>{detail}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{formatDate(item.ends_on)}</TableCell>
+                      <TableCell>{money(item.current_price_amount, item.current_price_currency ?? "BOB")}</TableCell>
+                      <TableCell><Badge variant="secondary">{item.status}</Badge></TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </CardContent>

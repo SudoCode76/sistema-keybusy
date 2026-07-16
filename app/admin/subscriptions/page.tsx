@@ -1,152 +1,141 @@
-import { createSubscription } from "@/app/actions"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
+import { Card } from "@/components/ui/card"
 import { requireAdmin } from "@/lib/auth"
-import { money } from "@/lib/money"
+
+import { getSubscriptionsPage } from "./data"
+import { SubscriptionsManager } from "./subscriptions-manager"
+
+function one<T>(value: T | T[] | null): T | null {
+  return Array.isArray(value) ? (value[0] ?? null) : value
+}
 
 export default async function SubscriptionsPage() {
   const { supabase } = await requireAdmin()
   const [
-    { data: subscriptions },
-    { data: customers },
+    initialPage,
     { data: products },
     { data: accounts },
+    { data: providers },
+    { data: countries },
+    { data: busySubscriptions },
   ] = await Promise.all([
-    supabase.from("subscription_status_view").select("*").order("ends_on"),
-    supabase.from("customers").select("id, display_name").order("display_name"),
-    supabase.from("products").select("id, name").order("name"),
-    supabase.from("service_accounts").select("id, label").order("label"),
+    getSubscriptionsPage(supabase),
+    supabase
+      .from("products")
+      .select(
+        "id, slug, name, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, services(id, slug, name)"
+      )
+      .eq("status", "active")
+      .order("name"),
+    supabase
+      .from("service_accounts")
+      .select(
+        "id, label, login_email, services(slug, name), spotify_family_plans(seats_total)"
+      )
+      .eq("status", "active")
+      .order("label"),
+    supabase
+      .from("providers")
+      .select("id, name")
+      .eq("status", "active")
+      .order("name"),
+    supabase
+      .from("countries")
+      .select("id, iso2, name, dial_code")
+      .eq("status", "active")
+      .order("name"),
+    supabase
+      .from("subscriptions")
+      .select("service_account_id, slot_label, products(slug)")
+      .not("service_account_id", "is", null)
+      .not("status", "in", "(canceled,inactive)"),
   ])
 
+  const busyAccountIds = new Set(
+    (busySubscriptions ?? [])
+      .map((item) => item.service_account_id)
+      .filter(Boolean)
+  )
+  const spotifyUsage = new Map<string, { used: number; ownerAssigned: boolean }>()
+  for (const subscription of busySubscriptions ?? []) {
+    if (!subscription.service_account_id || one(subscription.products)?.slug !== "spotify_family_member") {
+      continue
+    }
+
+    const current = spotifyUsage.get(subscription.service_account_id) ?? {
+      used: 0,
+      ownerAssigned: false,
+    }
+    current.used += 1
+    current.ownerAssigned ||= subscription.slot_label === "Titular"
+    spotifyUsage.set(subscription.service_account_id, current)
+  }
+
+  const productOptions =
+    products?.map((product) => {
+      const service = one(product.services)
+
+      return {
+        id: product.id,
+        serviceId: service?.id ?? "",
+        slug: product.slug,
+        name: product.name,
+        serviceName: service?.name ?? "Servicio",
+        serviceSlug: service?.slug ?? "",
+        defaultDurationMonths: product.default_duration_months ?? 1,
+        defaultPriceAmount: product.default_price_amount ?? 0,
+        defaultPriceCurrency: product.default_price_currency ?? "BOB",
+        defaultExchangeRate: product.default_exchange_rate,
+        purchaseMode: product.purchase_mode ?? "inventory",
+        accessFields: product.access_fields ?? [],
+        defaultPurchaseAmount: product.default_purchase_amount ?? 0,
+        defaultPurchaseCurrency: product.default_purchase_currency ?? "USDT",
+        defaultPurchaseExchangeRate: product.default_purchase_exchange_rate,
+      }
+    }) ?? []
+
+  const accountOptions =
+    accounts?.map((account) => {
+      const service = one(account.services)
+      const spotifyPlan = one(account.spotify_family_plans)
+      const usage = spotifyUsage.get(account.id)
+      const email = account.login_email ? ` · ${account.login_email}` : ""
+
+      return {
+        id: account.id,
+        label: `${account.label}${email}`,
+        serviceSlug: service?.slug ?? "",
+        availableForSale: !busyAccountIds.has(account.id),
+        seatsTotal: spotifyPlan?.seats_total ?? null,
+        seatsUsed: usage?.used ?? 0,
+        ownerAssigned: usage?.ownerAssigned ?? false,
+      }
+    }) ?? []
+
+  const platforms = Array.from(
+    new Map(
+      productOptions
+        .filter((product) => product.serviceSlug)
+        .map((product) => [
+          product.serviceSlug,
+          { slug: product.serviceSlug, name: product.serviceName },
+        ])
+    ).values()
+  ).sort((a, b) => a.name.localeCompare(b.name))
   return (
-    <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Vender acceso</CardTitle>
-          <CardDescription>Crea suscripción, ciclo de cobro y pago inicial opcional.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form action={createSubscription}>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="customer_id">Cliente</FieldLabel>
-                <select className="h-8 rounded-lg border bg-background px-2 text-sm" id="customer_id" name="customer_id" required>
-                  {(customers ?? []).map((customer) => (
-                    <option key={customer.id} value={customer.id}>{customer.display_name}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="product_id">Producto</FieldLabel>
-                <select className="h-8 rounded-lg border bg-background px-2 text-sm" id="product_id" name="product_id" required>
-                  {(products ?? []).map((product) => (
-                    <option key={product.id} value={product.id}>{product.name}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="service_account_id">Cuenta base</FieldLabel>
-                <select className="h-8 rounded-lg border bg-background px-2 text-sm" id="service_account_id" name="service_account_id">
-                  <option value="">Sin cuenta</option>
-                  {(accounts ?? []).map((account) => (
-                    <option key={account.id} value={account.id}>{account.label}</option>
-                  ))}
-                </select>
-              </Field>
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor="slot_label">Perfil/asiento</FieldLabel>
-                  <Input id="slot_label" name="slot_label" placeholder="Principal, Codex, Perfil 1" />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="starts_on">Inicio</FieldLabel>
-                  <Input id="starts_on" name="starts_on" type="date" />
-                </Field>
-              </div>
-              <div className="grid gap-3 md:grid-cols-4">
-                <Field>
-                  <FieldLabel htmlFor="duration_months">Meses</FieldLabel>
-                  <Input id="duration_months" name="duration_months" type="number" min="1" defaultValue="1" />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="current_price_amount">Precio</FieldLabel>
-                  <Input id="current_price_amount" name="current_price_amount" type="number" step="0.01" required />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="current_price_currency">Moneda</FieldLabel>
-                  <select className="h-8 rounded-lg border bg-background px-2 text-sm" id="current_price_currency" name="current_price_currency">
-                    <option value="BOB">BOB</option>
-                    <option value="USDT">USDT</option>
-                  </select>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="current_exchange_rate">Cambio</FieldLabel>
-                  <Input id="current_exchange_rate" name="current_exchange_rate" type="number" step="0.000001" />
-                </Field>
-              </div>
-              <Field>
-                <FieldLabel htmlFor="notes">Notas</FieldLabel>
-                <Textarea id="notes" name="notes" />
-              </Field>
-              <Field orientation="horizontal">
-                <input id="paid_now" name="paid_now" type="checkbox" />
-                <FieldLabel htmlFor="paid_now">Pagó al crear</FieldLabel>
-              </Field>
-              <Button type="submit">Guardar acceso</Button>
-            </FieldGroup>
-          </form>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Accesos</CardTitle>
-          <CardDescription>Activos, vencidos y pendientes de renovar.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Producto</TableHead>
-                <TableHead>Cuenta</TableHead>
-                <TableHead>Fin</TableHead>
-                <TableHead>Precio</TableHead>
-                <TableHead>Estado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(subscriptions ?? []).map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{item.customer_name}</TableCell>
-                  <TableCell>{item.product_name}</TableCell>
-                  <TableCell>{item.account_label ?? item.slot_label}</TableCell>
-                  <TableCell>{item.ends_on}</TableCell>
-                  <TableCell>{money(item.current_price_amount, item.current_price_currency ?? "BOB")}</TableCell>
-                  <TableCell><Badge variant="secondary">{item.computed_status}</Badge></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+    <Card>
+      <SubscriptionsManager
+        accounts={accountOptions}
+        countries={countries ?? []}
+        defaultCountryId={
+          countries?.find((country) => country.iso2 === "BO")?.id
+        }
+        initialActiveTotal={initialPage.activeTotal}
+        initialRows={initialPage.rows}
+        initialTotal={initialPage.total}
+        platforms={platforms}
+        products={productOptions}
+        providers={providers ?? []}
+      />
+    </Card>
   )
 }

@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { requireAdmin } from "@/lib/auth"
+import { formatDateTime } from "@/lib/date"
 
 export default async function ExchangeRatesPage() {
   const { supabase } = await requireAdmin()
@@ -56,7 +57,7 @@ export default async function ExchangeRatesPage() {
             <TableBody>
               {(data ?? []).map((rate) => (
                 <TableRow key={rate.id}>
-                  <TableCell>{new Date(rate.captured_at).toLocaleString("es-BO")}</TableCell>
+                  <TableCell>{formatDateTime(rate.captured_at)}</TableCell>
                   <TableCell>{rate.trade_type}</TableCell>
                   <TableCell>{rate.rows_requested}</TableCell>
                   <TableCell>{Number(rate.average_price).toFixed(4)} BOB</TableCell>

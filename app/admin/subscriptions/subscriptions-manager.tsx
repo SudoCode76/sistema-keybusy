@@ -1,0 +1,81 @@
+"use client"
+
+import { useState } from "react"
+
+import {
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+
+import { SaleDialog } from "./sale-dialog"
+import type {
+  AccountOption,
+  CountryOption,
+  ProductOption,
+  ProviderOption,
+} from "./sale-form"
+import { SubscriptionsTable, type SubscriptionRow } from "./subscriptions-table"
+
+export function SubscriptionsManager({
+  accounts,
+  countries,
+  defaultCountryId,
+  initialActiveTotal,
+  initialRows,
+  initialTotal,
+  platforms,
+  products,
+  providers,
+}: {
+  accounts: AccountOption[]
+  countries: CountryOption[]
+  defaultCountryId?: string
+  initialActiveTotal: number
+  initialRows: SubscriptionRow[]
+  initialTotal: number
+  platforms: { slug: string; name: string }[]
+  products: ProductOption[]
+  providers: ProviderOption[]
+}) {
+  const [platform, setPlatform] = useState("all")
+  const defaultProductSlug = products.find(
+    (product) => platform === "all" || product.serviceSlug === platform
+  )?.slug
+
+  return (
+    <>
+      <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <CardTitle>Accesos</CardTitle>
+          <CardDescription>
+            Activos, vencidos y pendientes de renovar.
+          </CardDescription>
+        </div>
+        <SaleDialog
+          accounts={accounts}
+          countries={countries}
+          defaultCountryId={defaultCountryId}
+          defaultProductSlug={defaultProductSlug}
+          key={`${platform}:${defaultProductSlug ?? ""}`}
+          products={products}
+          providers={providers}
+        />
+      </CardHeader>
+      <CardContent>
+        <SubscriptionsTable
+          accounts={accounts}
+          initialActiveTotal={initialActiveTotal}
+          initialRows={initialRows}
+          initialTotal={initialTotal}
+          onPlatformChange={setPlatform}
+          platform={platform}
+          platforms={platforms}
+          products={products}
+          providers={providers}
+        />
+      </CardContent>
+    </>
+  )
+}

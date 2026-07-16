@@ -1,0 +1,74 @@
+⨯ ./app/admin/subscriptions/sale-form.tsx:880:1
+Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  [90m878 |[0m     </form>
+  [90m879 |[0m   )
+[31m[1m>[0m [90m880 |[0m }
+  [90m    |[0m [31m[1m^[0m
+  [90m881 |[0m
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/subscriptions/sale-form.tsx [Client Component Browser]
+    ./app/admin/subscriptions/sale-dialog.tsx [Client Component Browser]
+    ./app/admin/subscriptions/sale-dialog.tsx [Server Component]
+    ./app/admin/subscriptions/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/subscriptions/sale-form.tsx [Client Component SSR]
+    ./app/admin/subscriptions/sale-dialog.tsx [Client Component SSR]
+    ./app/admin/subscriptions/sale-dialog.tsx [Server Component]
+    ./app/admin/subscriptions/page.tsx [Server Component]
+
+
+⨯ ./app/admin/subscriptions/sale-form.tsx:880:1
+Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  [90m878 |[0m     </form>
+  [90m879 |[0m   )
+[31m[1m>[0m [90m880 |[0m }
+  [90m    |[0m [31m[1m^[0m
+  [90m881 |[0m
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/subscriptions/sale-form.tsx [Client Component Browser]
+    ./app/admin/subscriptions/sale-dialog.tsx [Client Component Browser]
+    ./app/admin/subscriptions/sale-dialog.tsx [Server Component]
+    ./app/admin/subscriptions/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/subscriptions/sale-form.tsx [Client Component SSR]
+    ./app/admin/subscriptions/sale-dialog.tsx [Client Component SSR]
+    ./app/admin/subscriptions/sale-dialog.tsx [Server Component]
+    ./app/admin/subscriptions/page.tsx [Server Component]
+
+
+[browser] Uncaught Error: ./app/admin/subscriptions/sale-form.tsx:880:1
+Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  878 |     </form>
+  879 |   )
+> 880 | }
+      | ^
+  881 |
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./app/admin/subscriptions/sale-form.tsx [Client Component Browser]
+    ./app/admin/subscriptions/sale-dialog.tsx [Client Component Browser]
+    ./app/admin/subscriptions/sale-dialog.tsx [Server Component]
+    ./app/admin/subscriptions/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./app/admin/subscriptions/sale-form.tsx [Client Component SSR]
+    ./app/admin/subscriptions/sale-dialog.tsx [Client Component SSR]
+    ./app/admin/subscriptions/sale-dialog.tsx [Server Component]
+    ./app/admin/subscriptions/page.tsx [Server Component]
+
+
+    at <unknown> (Error: ./app/admin/subscriptions/sale-form.tsx:880:1)
+    at <unknown> (Error: (./app/admin/subscriptions/sale-form.tsx:880:1)

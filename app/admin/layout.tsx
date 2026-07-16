@@ -1,18 +1,11 @@
 import Link from "next/link"
 import {
-  BadgeDollarSignIcon,
-  CreditCardIcon,
   DatabaseIcon,
-  HomeIcon,
-  KeyRoundIcon,
-  ReceiptTextIcon,
-  RepeatIcon,
-  UsersIcon,
-  WalletCardsIcon,
+  LogOutIcon,
 } from "lucide-react"
 
 import { signOut } from "@/app/actions"
-import { Button } from "@/components/ui/button"
+import { AdminNav, AdminPageTitle } from "@/app/admin/admin-nav"
 import {
   Sidebar,
   SidebarContent,
@@ -26,20 +19,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { requireUser } from "@/lib/auth"
-
-const nav = [
-  { href: "/admin", label: "Resumen", icon: HomeIcon },
-  { href: "/admin/customers", label: "Clientes", icon: UsersIcon },
-  { href: "/admin/accounts", label: "Cuentas", icon: KeyRoundIcon },
-  { href: "/admin/subscriptions", label: "Accesos", icon: RepeatIcon },
-  { href: "/admin/payments", label: "Pagos", icon: CreditCardIcon },
-  { href: "/admin/costs", label: "Costos", icon: ReceiptTextIcon },
-  { href: "/admin/providers", label: "Proveedores", icon: WalletCardsIcon },
-  { href: "/admin/exchange-rates", label: "Cambio", icon: BadgeDollarSignIcon },
-]
 
 export default async function AdminLayout({
   children,
@@ -53,8 +36,14 @@ export default async function AdminLayout({
   }
 
   return (
-    <SidebarProvider>
-      <Sidebar collapsible="icon">
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "13rem",
+        } as React.CSSProperties
+      }
+    >
+      <Sidebar collapsible="icon" variant="floating">
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
@@ -69,36 +58,28 @@ export default async function AdminLayout({
           <SidebarGroup>
             <SidebarGroupLabel>Operación</SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu>
-                {nav.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton render={<Link href={item.href} />}>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
+              <AdminNav />
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
           <form action={signOut}>
-            <Button type="submit" className="w-full" variant="outline" size="sm">
-              Salir
-            </Button>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton type="submit">
+                  <LogOutIcon />
+                  <span>Salir</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
           </form>
         </SidebarFooter>
+        <SidebarRail />
       </Sidebar>
-      <SidebarInset>
-        <header className="flex h-14 items-center gap-3 border-b px-4">
+      <SidebarInset className="min-w-0">
+        <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur">
           <SidebarTrigger />
-          <div>
-            <p className="text-sm font-medium">Panel admin</p>
-            <p className="text-xs text-muted-foreground">
-              Cuentas, cobros, costos y renovaciones
-            </p>
-          </div>
+          <AdminPageTitle />
         </header>
         <main className="flex flex-1 flex-col gap-6 p-6">{children}</main>
       </SidebarInset>

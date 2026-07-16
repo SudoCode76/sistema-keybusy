@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { requireUser } from "@/lib/auth"
+import { formatDate } from "@/lib/date"
 import { money } from "@/lib/money"
 
 export default async function AdminPage() {
@@ -110,8 +111,8 @@ export default async function AdminPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Cliente</TableHead>
-                <TableHead>Producto</TableHead>
-                <TableHead>Cuenta</TableHead>
+                <TableHead>Ítem vendido</TableHead>
+                <TableHead>Inventario</TableHead>
                 <TableHead>Finaliza</TableHead>
                 <TableHead>Estado</TableHead>
               </TableRow>
@@ -122,7 +123,7 @@ export default async function AdminPage() {
                   <TableCell>{item.customer_name}</TableCell>
                   <TableCell>{item.product_name}</TableCell>
                   <TableCell>{item.account_label ?? item.slot_label}</TableCell>
-                  <TableCell>{item.ends_on}</TableCell>
+                  <TableCell>{formatDate(item.ends_on)}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">{item.computed_status}</Badge>
                   </TableCell>
