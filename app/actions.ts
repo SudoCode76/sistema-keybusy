@@ -8,6 +8,7 @@ import {
   resolveCustomerId,
   type DuplicateCheck,
 } from "@/app/admin/subscriptions/duplicate-check"
+import { boliviaToday } from "@/app/admin/subscriptions/mother-access"
 import { requireAdmin, requireUser } from "@/lib/auth"
 import { fetchBinanceAverage } from "@/lib/binance"
 import { formNumber, formText, toMoneyValues, type Currency } from "@/lib/money"
@@ -128,6 +129,30 @@ async function insertOrThrow<T>(
     throw error
   }
   return data as T
+}
+
+async function motherAccountRenewalError(
+  supabase: ServerClient,
+  serviceAccountId: string | null,
+  productSlug: string
+) {
+  if (
+    !serviceAccountId ||
+    !["spotify_family_member", "netflix_profile"].includes(productSlug)
+  ) {
+    return null
+  }
+
+  const { data, error } = await supabase
+    .from("service_accounts")
+    .select("renewal_due_on")
+    .eq("id", serviceAccountId)
+    .single()
+
+  if (error || !data) return error?.message ?? "Cuenta madre no encontrada"
+  return data.renewal_due_on && data.renewal_due_on < boliviaToday()
+    ? "La cuenta madre tiene el pago vencido. Registra su renovación antes de usarla."
+    : null
 }
 
 function normalizeEmail(value: string) {
@@ -1000,6 +1025,9 @@ export async function createServiceAccount(formData: FormData) {
   if (serviceError || !service) {
     throw serviceError ?? new Error("Servicio no encontrado")
   }
+  const renewalDueOn = ["spotify", "netflix"].includes(service.slug)
+    ? requireValue(formData.get("renewal_due_on"), "Próximo pago")
+    : null
   const accountResult = await supabase
     .from("service_accounts")
     .insert({
@@ -1013,6 +1041,7 @@ export async function createServiceAccount(formData: FormData) {
       base_cost_exchange_rate: rate || null,
       base_cost_bob: moneyValues.bob,
       base_cost_usdt: moneyValues.usdt,
+      renewal_due_on: renewalDueOn,
       two_factor_url: formText(formData.get("two_factor_url")),
       notes: formText(formData.get("notes")),
     })
@@ -1120,6 +1149,9 @@ export async function updateServiceAccount(formData: FormData) {
   if (serviceError || !service) {
     throw serviceError ?? new Error("Servicio no encontrado")
   }
+  const renewalDueOn = ["spotify", "netflix"].includes(service.slug)
+    ? requireValue(formData.get("renewal_due_on"), "Próximo pago")
+    : null
 
   await insertOrThrow(
     supabase
@@ -1136,6 +1168,7 @@ export async function updateServiceAccount(formData: FormData) {
         base_cost_exchange_rate: rate || null,
         base_cost_bob: moneyValues.bob,
         base_cost_usdt: moneyValues.usdt,
+        renewal_due_on: renewalDueOn,
         two_factor_url: formText(formData.get("two_factor_url")),
         notes: formText(formData.get("notes")),
       })
@@ -1492,6 +1525,12 @@ export async function createSale(
   if (productSlug === "spotify_family_member" && !saleAccountId) {
     return { error: "Spotify requiere un plan familiar enlazado" }
   }
+  const renewalError = await motherAccountRenewalError(
+    supabase,
+    saleAccountId,
+    productSlug
+  )
+  if (renewalError) return { error: renewalError }
 
   let duplicateCheck
   try {
@@ -1887,7 +1926,8 @@ export async function updateSubscription(
 ): Promise<SaleState> {
   const { supabase } = await requireAdmin()
   const id = requireValue(formData.get("id"), "Venta")
-  const productId = requireValue(formData.get("product_id"), "Item")
+  const productSlug = formText(formData.get("product_slug"))
+  if (!productSlug) return { error: "Item es obligatorio" }
   const phone = formText(formData.get("phone"))
   const telegramRaw = formText(formData.get("telegram_username"))
   const telegramUsername = normalizeTelegramUsername(telegramRaw)
@@ -1907,15 +1947,32 @@ export async function updateSubscription(
   const { data: product, error: productError } = await supabase
     .from("products")
     .select(
-      "slug, purchase_mode, default_purchase_amount, default_purchase_currency"
+      "id, slug, purchase_mode, default_purchase_amount, default_purchase_currency"
     )
-    .eq("id", productId)
+    .eq("slug", productSlug)
     .single()
   if (productError || !product) {
     return { error: productError?.message ?? "Item vendible invalido" }
   }
+  const productId = product.id
 
   const accountId = optionalId(formData.get("service_account_id"))
+  const { data: currentSale, error: currentSaleError } = await supabase
+    .from("subscriptions")
+    .select("service_account_id")
+    .eq("id", id)
+    .single()
+  if (currentSaleError || !currentSale) {
+    return { error: currentSaleError?.message ?? "Venta no encontrada" }
+  }
+  if (accountId !== currentSale.service_account_id) {
+    const renewalError = await motherAccountRenewalError(
+      supabase,
+      accountId,
+      productSlug
+    )
+    if (renewalError) return { error: renewalError }
+  }
   const managedEmailMode = formText(formData.get("managed_email_mode"))
   let managedEmail: ManagedEmail | null = null
   try {
@@ -2319,6 +2376,64 @@ export async function createCost(formData: FormData) {
   revalidatePath("/admin/costs")
   revalidatePath("/admin/accounts")
   revalidatePath("/admin")
+}
+
+export async function renewMotherAccount(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const amount = formNumber(formData.get("amount"))
+  const costCurrency = currency(formData.get("currency"))
+  let rate = formNumber(formData.get("exchange_rate"))
+
+  if (amount > 0 && !rate) {
+    const result = await fetchBinanceAverage("BUY")
+    rate = result.average
+
+    await insertOrThrow(
+      supabase.from("exchange_rate_snapshots").insert({
+        trade_type: "BUY",
+        rows_requested: 20,
+        average_price: result.average,
+        raw_ads: result.ads,
+      })
+    )
+  }
+
+  const values = toMoneyValues(amount, costCurrency, rate || undefined)
+  const { error } = await supabase.rpc("renew_mother_account", {
+    p_service_account_id: requireValue(
+      formData.get("service_account_id"),
+      "Cuenta madre"
+    ),
+    p_next_renewal_on: requireValue(
+      formData.get("next_renewal_on"),
+      "Próximo pago"
+    ),
+    p_amount: amount,
+    p_currency: costCurrency,
+    p_exchange_rate: rate || null,
+    p_amount_bob: values.bob,
+    p_amount_usdt: values.usdt,
+    p_notes: formText(formData.get("notes")),
+  })
+
+  if (error) throw error
+
+  revalidatePath("/admin")
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/costs")
+  revalidatePath("/admin/subscriptions")
+}
+
+export async function resolveMotherAccessIssue(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const { error } = await supabase.rpc("resolve_mother_access_issue", {
+    p_subscription_id: requireValue(formData.get("id"), "Acceso"),
+  })
+
+  if (error) throw error
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
 }
 
 export async function registerMissingPurchaseCost(

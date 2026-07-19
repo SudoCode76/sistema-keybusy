@@ -1,6 +1,11 @@
 "use client"
 
-import { createCost, deleteServiceAccount, markAccountDead } from "@/app/actions"
+import {
+  createCost,
+  deleteServiceAccount,
+  markAccountDead,
+  renewMotherAccount,
+} from "@/app/actions"
 import { InventoryForm } from "@/app/admin/accounts/inventory-form"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
@@ -31,6 +36,10 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { formatDate } from "@/lib/date"
+import {
+  isMotherService,
+  nextRenewalSuggestion,
+} from "@/app/admin/subscriptions/mother-access"
 import { CheckIcon, CopyIcon, MoreHorizontalIcon } from "lucide-react"
 import { useState } from "react"
 
@@ -67,6 +76,7 @@ type InventoryAccount = {
   base_cost_exchange_rate: number | null
   base_cost_usdt: number | null
   base_cost_bob: number | null
+  renewal_due_on: string | null
   two_factor_url: string | null
   notes: string | null
   services?: Nested<{ name: string | null; slug: string | null }>
@@ -158,6 +168,8 @@ export function InventoryActions({
   const [editOpen, setEditOpen] = useState(false)
   const [renewOpen, setRenewOpen] = useState(false)
   const spotifyPlan = one(account.spotify_family_plans)
+  const serviceSlug = one(account.services)?.slug
+  const isMother = isMotherService(serviceSlug)
   const credentials = one(account.account_credentials)
   const secrets = parseSecretPayload(credentials?.secret_payload)
   const platformPassword = secrets.platform_password ?? secrets.password
@@ -237,11 +249,27 @@ export function InventoryActions({
             <DialogTitle>Registrar renovación</DialogTitle>
             <DialogDescription>{account.label}</DialogDescription>
           </DialogHeader>
-          <DialogForm action={createCost}>
+          <DialogForm action={isMother ? renewMotherAccount : createCost}>
             <FieldGroup>
               <input type="hidden" name="service_account_id" value={account.id} />
               <input type="hidden" name="provider_id" value={account.provider_id ?? "none"} />
               <input type="hidden" name="cost_type" value="renewal" />
+              {isMother ? (
+                <Field>
+                  <FieldLabel htmlFor={`next_renewal_${account.id}`}>
+                    Próximo pago
+                  </FieldLabel>
+                  <Input
+                    defaultValue={nextRenewalSuggestion(
+                      account.renewal_due_on
+                    )}
+                    id={`next_renewal_${account.id}`}
+                    name="next_renewal_on"
+                    required
+                    type="date"
+                  />
+                </Field>
+              ) : null}
               <div className="grid gap-3 md:grid-cols-3">
                 <Field>
                   <FieldLabel htmlFor={`amount_${account.id}`}>Monto</FieldLabel>

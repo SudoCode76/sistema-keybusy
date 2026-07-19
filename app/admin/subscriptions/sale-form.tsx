@@ -80,6 +80,7 @@ export type AccountOption = {
   label: string
   serviceSlug: string
   availableForSale: boolean
+  renewalOverdue: boolean
   seatsTotal: number | null
   seatsUsed: number
   ownerAssigned: boolean
@@ -440,6 +441,8 @@ function SaleFormBody({
         (account) =>
           account.serviceSlug === requiredAccountService &&
           (!isSpotify || account.seatsTotal !== null) &&
+          (!account.renewalOverdue ||
+            account.id === initialValues?.serviceAccountId) &&
           (accountMode === "new" ||
             account.availableForSale ||
             account.id === initialValues?.serviceAccountId)

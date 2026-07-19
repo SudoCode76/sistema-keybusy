@@ -34,7 +34,7 @@ export default async function AccountsPage({
     await Promise.all([
       supabase
         .from("service_accounts")
-        .select("id, service_id, provider_id, email_address_id, label, login_email, username, status, started_at, dead_at, replacement_account_id, base_cost_amount, base_cost_currency, base_cost_exchange_rate, base_cost_usdt, base_cost_bob, two_factor_url, notes, services(name, slug), providers(name), email_addresses(email, email_password, origin, provider_id), spotify_family_plans(invite_url, address, seats_total), account_credentials(secret_payload)")
+        .select("id, service_id, provider_id, email_address_id, label, login_email, username, status, started_at, dead_at, replacement_account_id, base_cost_amount, base_cost_currency, base_cost_exchange_rate, base_cost_usdt, base_cost_bob, renewal_due_on, two_factor_url, notes, services(name, slug), providers(name), email_addresses(email, email_password, origin, provider_id), spotify_family_plans(invite_url, address, seats_total), account_credentials(secret_payload)")
         .order("created_at", { ascending: false }),
       supabase.from("services").select("id, name, slug").eq("status", "active").order("name"),
       supabase

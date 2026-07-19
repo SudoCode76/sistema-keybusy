@@ -9,6 +9,7 @@ import {
   reactivateSubscription,
   registerMissingPurchaseCost,
   replaceSubscriptionAccount,
+  resolveMotherAccessIssue,
   renewSubscription,
 } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -65,6 +66,7 @@ type SubscriptionRow = {
   productId: string
   serviceSlug: string
   serviceAccountId: string | null
+  motherAccessIssueOn: string | null
   slotLabel: string | null
   startsOn: string
   durationMonths: number
@@ -283,6 +285,18 @@ export function SubscriptionActions({
             <DropdownMenuItem onClick={() => setRenewOpen(true)}>
               Renovar
             </DropdownMenuItem>
+            {subscription.motherAccessIssueOn ? (
+              <form action={resolveMotherAccessIssue}>
+                <input name="id" type="hidden" value={subscription.id} />
+                <FormSubmitButton
+                  pendingLabel="Marcando..."
+                  size="sm"
+                  variant="ghost"
+                >
+                  Marcar solucionado
+                </FormSubmitButton>
+              </form>
+            ) : null}
             {whatsapp ? (
               <DropdownMenuItem
                 render={

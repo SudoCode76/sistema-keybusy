@@ -30,6 +30,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  isMotherService,
+  nextRenewalSuggestion,
+} from "@/app/admin/subscriptions/mother-access"
 
 type ServiceOption = {
   id: string
@@ -65,6 +69,7 @@ type InventoryAccount = {
   base_cost_amount: number | null
   base_cost_currency: string | null
   base_cost_exchange_rate: number | null
+  renewal_due_on: string | null
   two_factor_url: string | null
   notes: string | null
   email_addresses?:
@@ -147,6 +152,7 @@ export function InventoryForm({
     [services, serviceId]
   )
   const isSpotify = selectedService?.slug === "spotify"
+  const isMother = isMotherService(selectedService?.slug)
   const matchingProviders = useMemo(
     () =>
       providers.filter(
@@ -352,6 +358,20 @@ export function InventoryForm({
                 name="two_factor_url"
               />
             </Field>
+            {isMother ? (
+              <Field>
+                <FieldLabel htmlFor="renewal_due_on">Próximo pago</FieldLabel>
+                <Input
+                  defaultValue={
+                    account?.renewal_due_on ?? nextRenewalSuggestion(null)
+                  }
+                  id="renewal_due_on"
+                  name="renewal_due_on"
+                  required
+                  type="date"
+                />
+              </Field>
+            ) : null}
             {isSpotify ? (
               <div className="grid gap-3 md:grid-cols-2">
                 <Field>

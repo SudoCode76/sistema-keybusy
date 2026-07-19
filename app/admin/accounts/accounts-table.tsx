@@ -17,7 +17,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { formatDate } from "@/lib/date"
 import { money } from "@/lib/money"
+import {
+  boliviaToday,
+  isMotherService,
+  renewalOverdue,
+} from "@/app/admin/subscriptions/mother-access"
 
 type Nested<T> = T | T[] | null | undefined
 
@@ -38,6 +44,7 @@ type Account = {
   base_cost_exchange_rate: number | null
   base_cost_usdt: number | null
   base_cost_bob: number | null
+  renewal_due_on: string | null
   two_factor_url: string | null
   notes: string | null
   services?: Nested<{ name: string | null; slug: string | null }>
@@ -98,6 +105,7 @@ export function AccountsTable({
 }) {
   const [typeFilter, setTypeFilter] = useState<"mother" | "private" | "all">("mother")
   const [showInactive, setShowInactive] = useState(false)
+  const today = boliviaToday()
   const linked = useMemo(() => new Set(linkedAccountIds), [linkedAccountIds])
   const replacementLabels = useMemo(
     () => new Map(accounts.map((account) => [account.id, accountLabel(account)])),
@@ -143,6 +151,7 @@ export function AccountsTable({
             <TableHead>Plataforma</TableHead>
             <TableHead>Proveedor</TableHead>
             <TableHead>Compra</TableHead>
+            <TableHead>Próximo pago</TableHead>
             <TableHead>Duración</TableHead>
             <TableHead>Estado</TableHead>
             <TableHead className="text-right">Acciones</TableHead>
@@ -153,6 +162,12 @@ export function AccountsTable({
             const serviceSlug = one(account.services)?.slug
             const isPrivate = serviceSlug === "chatgpt-private"
             const isLinked = linked.has(account.id)
+            const isMother = isMotherService(serviceSlug)
+            const overdue = renewalOverdue(
+              serviceSlug,
+              account.renewal_due_on,
+              today
+            )
 
             return (
               <TableRow key={account.id}>
@@ -167,6 +182,22 @@ export function AccountsTable({
                 <TableCell>{one(account.services)?.name}</TableCell>
                 <TableCell>{one(account.providers)?.name}</TableCell>
                 <TableCell>{money(account.base_cost_usdt, "USDT")} / {money(account.base_cost_bob, "BOB")}</TableCell>
+                <TableCell>
+                  {isMother ? (
+                    <div className="flex flex-col items-start gap-1">
+                      <span>{formatDate(account.renewal_due_on)}</span>
+                      {!account.renewal_due_on ? (
+                        <Badge variant="secondary">Sin fecha</Badge>
+                      ) : overdue ? (
+                        <Badge variant="destructive">Vencido</Badge>
+                      ) : account.renewal_due_on === today ? (
+                        <Badge variant="outline">Vence hoy</Badge>
+                      ) : null}
+                    </div>
+                  ) : (
+                    "-"
+                  )}
+                </TableCell>
                 <TableCell>{durationText(account.started_at, account.dead_at)}</TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">

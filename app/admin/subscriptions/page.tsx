@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card"
 import { requireAdmin } from "@/lib/auth"
 
 import { getSubscriptionsPage } from "./data"
+import { boliviaToday, renewalOverdue } from "./mother-access"
 import { SubscriptionsManager } from "./subscriptions-manager"
 
 function one<T>(value: T | T[] | null): T | null {
@@ -10,6 +11,7 @@ function one<T>(value: T | T[] | null): T | null {
 
 export default async function SubscriptionsPage() {
   const { supabase } = await requireAdmin()
+  const today = boliviaToday()
   const [
     initialPage,
     { data: products },
@@ -29,7 +31,7 @@ export default async function SubscriptionsPage() {
     supabase
       .from("service_accounts")
       .select(
-        "id, label, login_email, services(slug, name), spotify_family_plans(seats_total)"
+        "id, label, login_email, renewal_due_on, services(slug, name), spotify_family_plans(seats_total)"
       )
       .eq("status", "active")
       .order("label"),
@@ -100,12 +102,18 @@ export default async function SubscriptionsPage() {
       const spotifyPlan = one(account.spotify_family_plans)
       const usage = spotifyUsage.get(account.id)
       const email = account.login_email ? ` · ${account.login_email}` : ""
+      const overdue = renewalOverdue(
+        service?.slug,
+        account.renewal_due_on,
+        today
+      )
 
       return {
         id: account.id,
         label: `${account.label}${email}`,
         serviceSlug: service?.slug ?? "",
-        availableForSale: !busyAccountIds.has(account.id),
+        availableForSale: !busyAccountIds.has(account.id) && !overdue,
+        renewalOverdue: overdue,
         seatsTotal: spotifyPlan?.seats_total ?? null,
         seatsUsed: usage?.used ?? 0,
         ownerAssigned: usage?.ownerAssigned ?? false,
