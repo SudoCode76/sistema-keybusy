@@ -5,6 +5,7 @@ import {
   SPOTIFY_MEMBER,
   SPOTIFY_OWNER,
   spotifyPlanUnavailable,
+  spotifySeatsAvailable,
 } from "./spotify-seats.ts"
 
 const plan = {
@@ -32,4 +33,10 @@ test("valida capacidad y titular de un plan Spotify", () => {
     ),
     false
   )
+})
+
+test("calcula cupos disponibles sin valores negativos", () => {
+  assert.equal(spotifySeatsAvailable(6, 2), 4)
+  assert.equal(spotifySeatsAvailable(6, 7), 0)
+  assert.equal(spotifySeatsAvailable(null, 2), null)
 })

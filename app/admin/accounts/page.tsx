@@ -23,6 +23,10 @@ type ProviderOption = {
   provider_services?: Array<{ service_id: string }>
 }
 
+function one<T>(value: T | T[] | null): T | null {
+  return Array.isArray(value) ? (value[0] ?? null) : value
+}
+
 export default async function AccountsPage({
   searchParams,
 }: {
@@ -44,7 +48,7 @@ export default async function AccountsPage({
         .order("name"),
       supabase
         .from("subscriptions")
-        .select("service_account_id")
+        .select("service_account_id, products(slug)")
         .neq("status", "canceled")
         .neq("status", "inactive")
         .not("service_account_id", "is", null),
@@ -52,6 +56,24 @@ export default async function AccountsPage({
   const linkedAccountIds = (linkedSales ?? [])
     .map((sale) => sale.service_account_id)
     .filter((id): id is string => Boolean(id))
+  const spotifyUsage = new Map<string, number>()
+  for (const sale of linkedSales ?? []) {
+    if (
+      !sale.service_account_id ||
+      one(sale.products)?.slug !== "spotify_family_member"
+    ) {
+      continue
+    }
+
+    spotifyUsage.set(
+      sale.service_account_id,
+      (spotifyUsage.get(sale.service_account_id) ?? 0) + 1
+    )
+  }
+  const accountRows = (accounts ?? []).map((account) => ({
+    ...account,
+    spotifySeatsUsed: spotifyUsage.get(account.id) ?? 0,
+  }))
   const providerOptions = ((providers ?? []) as ProviderOption[]).map((provider) => ({
     id: provider.id,
     name: provider.name,
@@ -80,7 +102,7 @@ export default async function AccountsPage({
           </Dialog>
         </CardHeader>
         <AccountsTable
-          accounts={accounts ?? []}
+          accounts={accountRows}
           linkedAccountIds={linkedAccountIds}
           services={services ?? []}
           providers={providerOptions}

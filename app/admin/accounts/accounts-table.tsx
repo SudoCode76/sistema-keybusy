@@ -24,6 +24,7 @@ import {
   isMotherService,
   renewalOverdue,
 } from "@/app/admin/subscriptions/mother-access"
+import { spotifySeatsAvailable } from "@/app/admin/subscriptions/spotify-seats"
 
 type Nested<T> = T | T[] | null | undefined
 
@@ -47,6 +48,7 @@ type Account = {
   renewal_due_on: string | null
   two_factor_url: string | null
   notes: string | null
+  spotifySeatsUsed: number
   services?: Nested<{ name: string | null; slug: string | null }>
   providers?: Nested<{ name: string | null }>
   email_addresses?: Nested<{
@@ -161,6 +163,13 @@ export function AccountsTable({
           {filteredAccounts.map((account) => {
             const serviceSlug = one(account.services)?.slug
             const isPrivate = serviceSlug === "chatgpt-private"
+            const spotifySeatsTotal = one(
+              account.spotify_family_plans
+            )?.seats_total ?? null
+            const spotifyAvailable = spotifySeatsAvailable(
+              spotifySeatsTotal,
+              account.spotifySeatsUsed
+            )
             const isLinked = linked.has(account.id)
             const isMother = isMotherService(serviceSlug)
             const overdue = renewalOverdue(
@@ -172,11 +181,27 @@ export function AccountsTable({
             return (
               <TableRow key={account.id}>
                 <TableCell>
-                  <div className="flex flex-col">
+                  <div className="flex flex-col items-start gap-1">
                     <span>{account.label}</span>
                     <span className="text-xs text-muted-foreground">
                       {account.login_email ?? account.username}
                     </span>
+                    {serviceSlug === "spotify" ? (
+                      spotifyAvailable === null ? (
+                        <Badge variant="outline">Cupos sin configurar</Badge>
+                      ) : (
+                        <Badge
+                          variant={
+                            spotifyAvailable === 0
+                              ? "destructive"
+                              : "secondary"
+                          }
+                        >
+                          {spotifyAvailable} de {spotifySeatsTotal} cupos
+                          disponibles
+                        </Badge>
+                      )
+                    ) : null}
                   </div>
                 </TableCell>
                 <TableCell>{one(account.services)?.name}</TableCell>

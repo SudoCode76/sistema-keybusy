@@ -3,6 +3,13 @@ export const SPOTIFY_OWNER = "Titular"
 
 export type SpotifySeatType = typeof SPOTIFY_MEMBER | typeof SPOTIFY_OWNER
 
+export function spotifySeatsAvailable(
+  seatsTotal: number | null,
+  seatsUsed: number
+) {
+  return seatsTotal === null ? null : Math.max(0, seatsTotal - seatsUsed)
+}
+
 export function spotifyPlanUnavailable(
   account: {
     id: string
