@@ -49,7 +49,7 @@ export function SubscriptionsManager({
 
   return (
     <>
-      <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <CardHeader className="min-w-0 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <CardTitle>Accesos</CardTitle>
           <CardDescription>
@@ -66,7 +66,7 @@ export function SubscriptionsManager({
           providers={providers}
         />
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-w-0">
         <SubscriptionsTable
           accounts={accounts}
           countries={countries}

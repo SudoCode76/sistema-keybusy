@@ -142,7 +142,7 @@ export default async function SubscriptionsPage() {
     ).values()
   ).sort((a, b) => a.name.localeCompare(b.name))
   return (
-    <Card>
+    <Card className="min-w-0">
       <SubscriptionsManager
         accounts={accountOptions}
         countries={countries ?? []}

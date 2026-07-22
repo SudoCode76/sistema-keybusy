@@ -21,6 +21,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDate } from "@/lib/date"
 import { money } from "@/lib/money"
+import { cn } from "@/lib/utils"
 
 import type {
   AccountOption,
@@ -43,6 +44,7 @@ export type SubscriptionRow = {
   serviceName: string
   serviceSlug: string
   serviceAccountId: string | null
+  motherAccessIssueOn: string | null
   accountLabel: string | null
   slotLabel: string | null
   status: string
@@ -81,6 +83,19 @@ export type SubscriptionRow = {
     visible_to_customer: boolean
     visible_fields: string[]
   } | null
+}
+
+const responsiveRowClassName =
+  "grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border p-4 xl:table-row xl:rounded-none xl:border-x-0 xl:border-t-0 xl:p-0"
+const responsiveCellClassName =
+  "min-w-0 whitespace-normal p-0 xl:table-cell xl:p-2"
+
+function MobileLabel({ children }: { children: string }) {
+  return (
+    <span className="mb-1 block text-xs font-medium text-muted-foreground xl:hidden">
+      {children}
+    </span>
+  )
 }
 
 export function SubscriptionsTable({
@@ -163,7 +178,7 @@ export function SubscriptionsTable({
   }, [initialVersion, page, platform, query, showCanceled])
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="min-w-0 flex flex-col gap-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center">
         <Input
           aria-label="Buscar por teléfono, Telegram o correo"
@@ -187,15 +202,16 @@ export function SubscriptionsTable({
           <FieldLabel htmlFor="show-canceled">Ver dados de baja</FieldLabel>
         </Field>
       </div>
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
         <Tabs
+          className="w-full min-w-0 overflow-x-auto xl:flex-1"
           value={platform}
           onValueChange={(value) => {
             onPlatformChange(value)
             setPage(1)
           }}
         >
-          <TabsList className="max-w-full flex-wrap justify-start">
+          <TabsList className="w-max min-w-full justify-start">
             <TabsTrigger value="all">Todo</TabsTrigger>
             {platforms.map((item) => (
               <TabsTrigger key={item.slug} value={item.slug}>
@@ -204,10 +220,12 @@ export function SubscriptionsTable({
             ))}
           </TabsList>
         </Tabs>
-        <Badge variant="secondary">Accesos activos: {activeTotal}</Badge>
+        <Badge className="self-start xl:self-auto" variant="secondary">
+          Accesos activos: {activeTotal}
+        </Badge>
       </div>
-      <Table>
-        <TableHeader>
+      <Table className="block w-full xl:table xl:min-w-[60rem]">
+        <TableHeader className="hidden xl:table-header-group">
           <TableRow>
             <TableHead>Cliente</TableHead>
             <TableHead>Ítem vendido</TableHead>
@@ -218,70 +236,124 @@ export function SubscriptionsTable({
             <TableHead>Acciones</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody className="grid gap-3 [&_tr:last-child]:border xl:table-row-group xl:[&_tr:last-child]:border-0">
           {loading
             ? Array.from({ length: 5 }, (_, index) => (
-                <TableRow key={index}>
+                <TableRow className={responsiveRowClassName} key={index}>
                   {Array.from({ length: 7 }, (_, cell) => (
-                    <TableCell key={cell}><Skeleton className="h-4 w-full" /></TableCell>
+                    <TableCell
+                      className={responsiveCellClassName}
+                      key={cell}
+                    >
+                      <Skeleton className="h-4 w-full" />
+                    </TableCell>
                   ))}
                 </TableRow>
               ))
             : rows.map((item) => (
-            <TableRow key={item.id}>
-              <TableCell>{item.customerName}</TableCell>
-              <TableCell>{item.productName}</TableCell>
-              <TableCell>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span>{item.accountLabel ?? item.slotLabel ?? "-"}</span>
-                  {item.serviceSlug === "spotify" && item.slotLabel ? (
-                    <Badge variant="outline">{item.slotLabel}</Badge>
-                  ) : null}
-                </div>
-              </TableCell>
-              <TableCell>{formatDate(item.endsOn)}</TableCell>
-              <TableCell>
-                {money(item.currentPriceAmount * item.durationMonths, item.currentPriceCurrency)}
-              </TableCell>
-              <TableCell><Badge variant="secondary">{item.status}</Badge></TableCell>
-              <TableCell>
-                <SubscriptionActions
-                  accounts={accounts}
-                  countries={countries}
-                  defaultCountryId={defaultCountryId}
-                  products={products}
-                  providers={providers}
-                  subscription={{
-                    id: item.id,
-                    customerId: item.customerId,
-                    customerCountryId: item.customerCountryId,
-                    customerName: item.customerName,
-                    customerPhone: item.customerPhone,
-                    customerPhoneE164: item.customerPhoneE164,
-                    customerTelegram: item.customerTelegram,
-                    productId: item.productId,
-                    serviceSlug: item.serviceSlug,
-                    serviceAccountId: item.serviceAccountId,
-                    slotLabel: item.slotLabel,
-                    startsOn: item.startsOn,
-                    durationMonths: item.durationMonths,
-                    currentPriceAmount: item.currentPriceAmount,
-                    currentPriceCurrency: item.currentPriceCurrency,
-                    currentExchangeRate: item.currentExchangeRate,
-                    hasPurchaseCost: item.hasPurchaseCost,
-                    managedEmailId: item.managedEmailId,
-                    purchaseCost: item.purchaseCost,
-                    accountLabel: item.accountLabel,
-                    notes: item.notes,
-                    productName: item.productName,
-                    status: item.status,
-                    detail: item.detail,
-                    account: item.account,
-                    endsOn: item.endsOn,
-                  }}
-                />
-              </TableCell>
-            </TableRow>
+                <TableRow
+                  className={responsiveRowClassName}
+                  key={item.id}
+                >
+                  <TableCell
+                    className={cn("col-span-2", responsiveCellClassName)}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <MobileLabel>Cliente</MobileLabel>
+                      <span className="font-medium xl:font-normal">
+                        {item.customerName}
+                      </span>
+                      {item.serviceSlug === "spotify" &&
+                      item.detail?.login_email ? (
+                        <span className="break-all text-xs text-muted-foreground">
+                          {item.detail.login_email}
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className={responsiveCellClassName}>
+                    <MobileLabel>Ítem vendido</MobileLabel>
+                    {item.productName}
+                  </TableCell>
+                  <TableCell className={responsiveCellClassName}>
+                    <MobileLabel>Inventario</MobileLabel>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{item.accountLabel ?? item.slotLabel ?? "-"}</span>
+                      {item.serviceSlug === "spotify" && item.slotLabel ? (
+                        <Badge variant="outline">{item.slotLabel}</Badge>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className={responsiveCellClassName}>
+                    <MobileLabel>Renueva</MobileLabel>
+                    {formatDate(item.endsOn)}
+                  </TableCell>
+                  <TableCell className={responsiveCellClassName}>
+                    <MobileLabel>Venta total</MobileLabel>
+                    {money(
+                      item.currentPriceAmount * item.durationMonths,
+                      item.currentPriceCurrency
+                    )}
+                  </TableCell>
+                  <TableCell className={responsiveCellClassName}>
+                    <MobileLabel>Estado</MobileLabel>
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge variant="secondary">{item.status}</Badge>
+                      {item.motherAccessIssueOn ? (
+                        <Badge
+                          className="max-w-full whitespace-normal"
+                          variant="destructive"
+                        >
+                          Acceso afectado · {formatDate(item.motherAccessIssueOn)}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      "col-span-2 flex flex-col items-end justify-end",
+                      responsiveCellClassName
+                    )}
+                  >
+                    <MobileLabel>Acciones</MobileLabel>
+                    <SubscriptionActions
+                      accounts={accounts}
+                      countries={countries}
+                      defaultCountryId={defaultCountryId}
+                      products={products}
+                      providers={providers}
+                      subscription={{
+                        id: item.id,
+                        customerId: item.customerId,
+                        customerCountryId: item.customerCountryId,
+                        customerName: item.customerName,
+                        customerPhone: item.customerPhone,
+                        customerPhoneE164: item.customerPhoneE164,
+                        customerTelegram: item.customerTelegram,
+                        productId: item.productId,
+                        serviceSlug: item.serviceSlug,
+                        serviceAccountId: item.serviceAccountId,
+                        motherAccessIssueOn: item.motherAccessIssueOn,
+                        slotLabel: item.slotLabel,
+                        startsOn: item.startsOn,
+                        durationMonths: item.durationMonths,
+                        currentPriceAmount: item.currentPriceAmount,
+                        currentPriceCurrency: item.currentPriceCurrency,
+                        currentExchangeRate: item.currentExchangeRate,
+                        hasPurchaseCost: item.hasPurchaseCost,
+                        managedEmailId: item.managedEmailId,
+                        purchaseCost: item.purchaseCost,
+                        accountLabel: item.accountLabel,
+                        notes: item.notes,
+                        productName: item.productName,
+                        status: item.status,
+                        detail: item.detail,
+                        account: item.account,
+                        endsOn: item.endsOn,
+                      }}
+                    />
+                  </TableCell>
+                </TableRow>
               ))}
         </TableBody>
       </Table>
@@ -291,11 +363,11 @@ export function SubscriptionsTable({
           Sin accesos para este filtro.
         </div>
       ) : null}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           {total} registros · Página {page} de {totalPages}
         </p>
-        <div className="flex gap-2">
+        <div className="flex self-end gap-2 sm:self-auto">
           <Button
             aria-label="Página anterior"
             disabled={loading || page === 1}

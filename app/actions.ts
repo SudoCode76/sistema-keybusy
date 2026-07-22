@@ -418,22 +418,17 @@ export async function authenticate(
   const email = requireValue(formData.get("email"), "Email")
   const password = requireValue(formData.get("password"), "Password")
   const intent = formData.get("intent")
-  const fullName = formText(formData.get("full_name"))
 
   const result =
     intent === "signup"
-      ? await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { full_name: fullName ?? email } },
-        })
+      ? await supabase.auth.signUp({ email, password })
       : await supabase.auth.signInWithPassword({ email, password })
 
   if (result.error) {
     return {
       error:
         result.error.message === "Invalid login credentials"
-          ? "No existe una cuenta con esos datos. Usa Crear si es tu primer ingreso."
+          ? "No existe una cuenta con esos datos. Usa Crear cuenta si es tu primer ingreso."
           : result.error.message,
     }
   }
