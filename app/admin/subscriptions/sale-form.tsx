@@ -72,6 +72,7 @@ export type ProductOption = {
   defaultPurchaseAmount: number
   defaultPurchaseCurrency: "BOB" | "USDT"
   defaultPurchaseExchangeRate: number | null
+  allowAccountReuseOnCancel: boolean
   isDefault: boolean
 }
 
@@ -80,10 +81,24 @@ export type AccountOption = {
   label: string
   serviceSlug: string
   availableForSale: boolean
+  availableForCodex: boolean
   renewalOverdue: boolean
   seatsTotal: number | null
   seatsUsed: number
   ownerAssigned: boolean
+}
+
+export type ReleasedSpotifyAccessOption = {
+  subscriptionId: string
+  serviceAccountId: string
+  serviceAccountLabel: string
+  customerName: string
+  loginEmail: string
+  loginPassword: string | null
+  emailPassword: string | null
+  invitationEmail: string | null
+  emailAddressId: string | null
+  releasedOn: string
 }
 
 export type ProviderOption = {
@@ -104,6 +119,7 @@ export type CountryOption = {
 export type SaleFormProps = {
   products: ProductOption[]
   accounts: AccountOption[]
+  releasedSpotifyAccesses?: ReleasedSpotifyAccessOption[]
   providers: ProviderOption[]
   countries: CountryOption[]
   defaultCountryId?: string
@@ -304,6 +320,7 @@ function QuickProviderDialog({
 function SaleFormBody({
   products,
   accounts,
+  releasedSpotifyAccesses = [],
   providers,
   countries,
   defaultCountryId,
@@ -364,6 +381,7 @@ function SaleFormBody({
   const [providerOptions, setProviderOptions] = useState(providers)
   const [providerDialogOpen, setProviderDialogOpen] = useState(false)
   const [accountMode, setAccountMode] = useState<"new" | "existing">("new")
+  const [reusableAccessId, setReusableAccessId] = useState("new")
   const [managedEmailMode, setManagedEmailMode] = useState<"new" | "existing">(
     "new"
   )
@@ -423,8 +441,17 @@ function SaleFormBody({
       : undefined,
   }
   const isSpotify = selectedProduct?.slug === "spotify_family_member"
+  const isCodex = selectedProduct?.slug === "chatgpt_codex"
+  const selectedReusableAccess =
+    isSpotify && reusableAccessId !== "new"
+      ? releasedSpotifyAccesses.find(
+          (access) => access.subscriptionId === reusableAccessId
+        )
+      : undefined
   const editing = Boolean(initialValues)
-  const canReuseIndividual = selectedProduct?.purchaseMode === "individual"
+  const canReuseIndividual =
+    selectedProduct?.purchaseMode === "individual" &&
+    selectedProduct.allowAccountReuseOnCancel
   const usesOptionalInventory =
     selectedProduct?.purchaseMode === "inventory" && !isSpotify
   const requiredAccountService = isSpotify
@@ -443,8 +470,8 @@ function SaleFormBody({
           (!isSpotify || account.seatsTotal !== null) &&
           (!account.renewalOverdue ||
             account.id === initialValues?.serviceAccountId) &&
-          (accountMode === "new" ||
-            account.availableForSale ||
+            (accountMode === "new" ||
+            (isCodex ? account.availableForCodex : account.availableForSale) ||
             account.id === initialValues?.serviceAccountId)
       )
     : []
@@ -454,7 +481,10 @@ function SaleFormBody({
   const spotifyPlanUnavailable = Boolean(
     isSpotify &&
     selectedAccount &&
-    isSpotifyPlanUnavailable(selectedAccount, spotifySeatType)
+    isSpotifyPlanUnavailable(selectedAccount, spotifySeatType, {
+      accountId: initialValues?.serviceAccountId ?? null,
+      seatType: initialValues?.profileLabel ?? null,
+    })
   )
   const spotifySelectionInvalid =
     isSpotify && (!accountId || spotifyPlanUnavailable)
@@ -604,6 +634,7 @@ function SaleFormBody({
     setAccountId(firstSharedAccount?.id ?? "")
     setAccountLabel(firstSharedAccount?.label ?? "")
     setAccountMode("new")
+    setReusableAccessId("new")
     setLinkInventory(
       Boolean(firstSharedAccount && product?.purchaseMode === "inventory")
     )
@@ -863,6 +894,11 @@ function SaleFormBody({
 
         <FieldSet>
           <FieldLegend>Acceso</FieldLegend>
+          <input
+            name="reusable_access_subscription_id"
+            type="hidden"
+            value={isSpotify && reusableAccessId !== "new" ? reusableAccessId : ""}
+          />
           <FieldGroup
             className={cn(
               canReuseIndividual && "grid gap-3 md:grid-cols-2",
@@ -870,6 +906,63 @@ function SaleFormBody({
                 "grid gap-3 lg:grid-cols-[minmax(10rem,0.8fr)_minmax(18rem,1.6fr)_minmax(18rem,1.2fr)]"
             )}
           >
+            {isSpotify && !editing && releasedSpotifyAccesses.length > 0 ? (
+              <Field className="lg:col-span-3">
+                <FieldLabel>Cuenta del cliente</FieldLabel>
+                <Select
+                  value={reusableAccessId}
+                  onValueChange={(value) => {
+                    const nextValue = value ?? "new"
+                    setReusableAccessId(nextValue)
+                    const access = releasedSpotifyAccesses.find(
+                      (item) => item.subscriptionId === nextValue
+                    )
+                    const familyPlan = access
+                      ? accounts.find(
+                          (item) => item.id === access.serviceAccountId
+                        )
+                      : undefined
+                    setAccountId(access?.serviceAccountId ?? "")
+                    setAccountLabel(
+                      familyPlan?.label ?? access?.serviceAccountLabel ?? ""
+                    )
+                    setLoginEmail(access?.loginEmail ?? "")
+                    setEmailPassword(access?.emailPassword ?? "")
+                    setInvitationEmail(access?.invitationEmail ?? "")
+                    setManagedEmailMode(
+                      access?.emailAddressId ? "existing" : "new"
+                    )
+                    setDuplicateCheck(null)
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {selectedReusableAccess?.loginEmail ??
+                        "Crear cuenta nueva"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="new">Crear cuenta nueva</SelectItem>
+                      {releasedSpotifyAccesses.map((access) => (
+                        <SelectItem
+                          key={access.subscriptionId}
+                          value={access.subscriptionId}
+                        >
+                          {access.loginEmail} · Cliente anterior: {access.customerName} ·
+                          liberada {formatDate(access.releasedOn.slice(0, 10))}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  Selecciona una cuenta de un cliente dado de baja para
+                  reutilizar sus credenciales.
+                </FieldDescription>
+              </Field>
+            ) : null}
+
             {usesOptionalInventory ? (
               <Field orientation="horizontal">
                 <Checkbox
@@ -919,7 +1012,10 @@ function SaleFormBody({
 
                     if (
                       selectedAccount &&
-                      isSpotifyPlanUnavailable(selectedAccount, next)
+                      isSpotifyPlanUnavailable(selectedAccount, next, {
+                        accountId: initialValues?.serviceAccountId ?? null,
+                        seatType: initialValues?.profileLabel ?? null,
+                      })
                     ) {
                       setAccountId("")
                       setAccountLabel("")
@@ -1009,8 +1105,12 @@ function SaleFormBody({
                     <SelectGroup>
                       {accountOptions.map((account) => {
                         const unavailable =
-                          isSpotify &&
-                          isSpotifyPlanUnavailable(account, spotifySeatType)
+                          (isSpotify &&
+                            isSpotifyPlanUnavailable(account, spotifySeatType, {
+                              accountId: initialValues?.serviceAccountId ?? null,
+                              seatType: initialValues?.profileLabel ?? null,
+                            })) ||
+                          (isCodex && !account.availableForCodex)
 
                         return (
                           <SelectItem
@@ -1021,6 +1121,9 @@ function SaleFormBody({
                             {account.label}
                             {isSpotify && account.seatsTotal !== null
                               ? ` · ${account.seatsUsed}/${account.seatsTotal} cupos`
+                              : ""}
+                            {isCodex && !account.availableForCodex
+                              ? " · Codex en uso"
                               : ""}
                             {isSpotify && account.ownerAssigned
                               ? " · titular asignado"
@@ -1143,9 +1246,13 @@ function SaleFormBody({
               accountMode === "new" &&
               (!isSpotify || spotifySeatType === SPOTIFY_MEMBER) ? (
                 <ManagedEmailPicker
+                  key={`${reusableAccessId}:${selectedReusableAccess?.emailAddressId ?? initialValues?.managedEmailId ?? ""}`}
                   email={loginEmail}
                   emailPassword={emailPassword}
-                  initialEmailId={initialValues?.managedEmailId}
+                  initialEmailId={
+                    selectedReusableAccess?.emailAddressId ??
+                    initialValues?.managedEmailId
+                  }
                   onEmailChange={(value) => {
                     setLoginEmail(value)
                     setDuplicateCheck(null)
@@ -1154,8 +1261,10 @@ function SaleFormBody({
                   onModeChange={setManagedEmailMode}
                   platformPassword={
                     copy.loginPasswordLabel
-                      ? {
-                          defaultValue: initialValues?.loginPassword,
+                    ? {
+                          defaultValue:
+                            selectedReusableAccess?.loginPassword ??
+                            initialValues?.loginPassword,
                           label: copy.loginPasswordLabel,
                           name: "login_password",
                         }

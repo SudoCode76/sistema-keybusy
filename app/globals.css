@@ -1,4 +1,22 @@
 @import "tailwindcss";
+
+.inventory-tabs-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 45%, transparent) transparent;
+}
+
+.inventory-tabs-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.inventory-tabs-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.inventory-tabs-scroll::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+}
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 

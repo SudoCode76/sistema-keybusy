@@ -8,6 +8,7 @@ import {
 } from "@/app/actions"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Card,
   CardContent,
@@ -46,6 +47,7 @@ import { requireAdmin } from "@/lib/auth"
 import { money } from "@/lib/money"
 
 import { AccessFieldsChecklist, NewPlatformDialog } from "./platform-dialog"
+import { FormSubmitButton } from "@/app/admin/accounts/form-submit-button"
 
 function one<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? value[0] ?? null : value
@@ -77,7 +79,7 @@ export default async function ServicesPage({
       .order("name"),
     supabase
       .from("products")
-      .select("id, service_id, slug, name, product_type, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, is_default, status, services(name)")
+      .select("id, service_id, slug, name, product_type, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, allow_account_reuse_on_cancel, is_default, status, services(name)")
       .order("name"),
   ])
   const activeServices = (services ?? []).filter((service) => service.status === "active")
@@ -242,6 +244,13 @@ export default async function ServicesPage({
                         />
                       </Field>
                     </div>
+                    <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+                      <Checkbox name="allow_account_reuse_on_cancel" value="1" />
+                      <span>
+                        <span className="font-medium">Permitir mantener la cuenta disponible al dar de baja</span>
+                        <span className="block text-muted-foreground">Aplica a cuentas privadas reutilizables.</span>
+                      </span>
+                    </label>
                     <Field>
                       <FieldLabel>Datos solicitados al vender</FieldLabel>
                       <AccessFieldsChecklist idPrefix="product-new" />
@@ -487,7 +496,9 @@ export default async function ServicesPage({
                                     values={product.access_fields ?? []}
                                   />
                                 </Field>
-                                <Button type="submit">Guardar cambios</Button>
+                                <FormSubmitButton pendingLabel="Guardando...">
+                                  Guardar cambios
+                                </FormSubmitButton>
                               </FieldGroup>
                             </DialogForm>
                           </DialogContent>

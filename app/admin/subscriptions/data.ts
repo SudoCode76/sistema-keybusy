@@ -1,6 +1,9 @@
 import type { createClient } from "@/lib/supabase/server"
 
 import type { SubscriptionRow } from "./subscriptions-table"
+import { accountCostTotals, calendarDaysBetween } from "@/lib/chatgpt-account-history"
+import { boliviaDate } from "@/lib/date"
+import { accessStatus } from "./duplicate-check"
 import {
   boliviaToday,
   motherAccessIssueOn as getMotherAccessIssueOn,
@@ -21,22 +24,30 @@ export async function getSubscriptionsPage(
     query = "",
     platform = "all",
     showCanceled = false,
+    onlyReminded = false,
   }: {
     page?: number
     query?: string
     platform?: string
     showCanceled?: boolean
+    onlyReminded?: boolean
   } = {}
 ) {
   const today = boliviaToday()
   let productIds: string[] | null = null
   let subscriptionQuery = supabase
     .from("subscriptions")
-    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, access_restored_on, created_at, notes, customers(id, country_id, display_name, phone, phone_e164, phone_normalized, telegram_username), products(id, slug, name, services(slug, name)), service_accounts(label, login_email, username, provider_id, email_address_id, base_cost_amount, base_cost_currency, renewal_due_on, access_issue_on, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields)", { count: "exact" })
+    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, renewal_message_sent_at, access_restored_on, created_at, notes, customers(id, country_id, display_name, phone, phone_e164, phone_normalized, telegram_username), products(id, slug, name, services(slug, name)), service_accounts(label, login_email, username, provider_id, email_address_id, base_cost_amount, base_cost_currency, renewal_due_on, access_issue_on, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields)", { count: "exact" })
 
   subscriptionQuery = showCanceled
     ? subscriptionQuery.in("status", ["canceled", "inactive"])
     : subscriptionQuery.not("status", "in", "(canceled,inactive)")
+
+  if (onlyReminded) {
+    subscriptionQuery = subscriptionQuery
+      .not("status", "in", "(canceled,inactive)")
+      .not("renewal_message_sent_at", "is", null)
+  }
 
   if (platform !== "all") {
     const { data: service } = await supabase
@@ -59,7 +70,7 @@ export async function getSubscriptionsPage(
     .from("subscriptions")
     .select("id", { count: "exact", head: true })
     .not("status", "in", "(canceled,inactive)")
-    .gte("ends_on", today)
+    .gt("ends_on", today)
   if (productIds) activeCountQuery = activeCountQuery.in("product_id", productIds)
   const activeTotalPromise = activeCountQuery.then(({ count, error }) => {
     if (error) throw error
@@ -134,6 +145,7 @@ export async function getSubscriptionsPage(
     { data: credentials },
     { data: purchaseCosts },
     { data: emailUsages },
+    { data: accountHistory },
   ] = await Promise.all([
     accountIds.length
       ? supabase
@@ -155,6 +167,13 @@ export async function getSubscriptionsPage(
           .in("subscription_id", subscriptionIds)
           .is("ended_at", null)
       : Promise.resolve({ data: [] }),
+    subscriptionIds.length
+      ? supabase
+          .from("subscription_account_history")
+          .select("subscription_id, service_account_id, assigned_at, ended_at, blocked_at, block_reason, purchase_cost_bob, purchase_cost_usdt, service_accounts(label, created_at)")
+          .in("subscription_id", subscriptionIds)
+          .order("assigned_at")
+      : Promise.resolve({ data: [] }),
   ])
   const credentialsByAccountId = new Map(
     (credentials ?? []).map((item) => [item.service_account_id, item])
@@ -168,12 +187,28 @@ export async function getSubscriptionsPage(
       usage.email_address_id,
     ])
   )
+  const normalizedHistory = (accountHistory ?? []).map((history) => ({
+    ...history,
+    service_accounts: one(history.service_accounts),
+    duration_days: calendarDaysBetween(
+      one(history.service_accounts)?.created_at ?? history.assigned_at,
+      history.ended_at ?? today
+    ),
+  })) as Array<SubscriptionRow["accountHistory"][number] & { subscription_id: string }>
+  const historyBySubscription = new Map<string, SubscriptionRow["accountHistory"]>()
+  for (const history of normalizedHistory) {
+    const current = historyBySubscription.get(history.subscription_id) ?? []
+    current.push(history)
+    historyBySubscription.set(history.subscription_id, current)
+  }
   const rows: SubscriptionRow[] = (subscriptions ?? []).map((subscription) => {
     const customer = one(subscription.customers)
     const product = one(subscription.products)
     const service = one(product?.services ?? null)
     const account = one(subscription.service_accounts)
     const detail = one(subscription.subscription_access_details)
+    const accountHistory = historyBySubscription.get(subscription.id) ?? []
+    const accountCosts = accountCostTotals(accountHistory)
     const purchaseCost = purchaseCostsBySubscription.get(subscription.id)
     const motherIssueOn = getMotherAccessIssueOn({
       accessIssueOn: account?.access_issue_on ?? null,
@@ -220,15 +255,17 @@ export async function getSubscriptionsPage(
       status:
         ["canceled", "inactive"].includes(subscription.status)
           ? subscription.status
-          : subscription.ends_on < today
-            ? "expired"
-            : "active",
+          : accessStatus(subscription.ends_on, today),
       startsOn: subscription.starts_on,
       endsOn: subscription.ends_on,
       durationMonths: subscription.duration_months,
       currentPriceAmount: subscription.current_price_amount,
       currentPriceCurrency: subscription.current_price_currency ?? "BOB",
       currentExchangeRate: subscription.current_exchange_rate,
+      renewalMessageSentAt: subscription.renewal_message_sent_at,
+      renewalMessageDays: subscription.renewal_message_sent_at
+        ? calendarDaysBetween(boliviaDate(subscription.renewal_message_sent_at), today)
+        : null,
       hasPurchaseCost: Boolean(purchaseCost),
       purchaseCost: purchaseCost
         ? {
@@ -243,6 +280,9 @@ export async function getSubscriptionsPage(
         null,
       notes: subscription.notes,
       detail: detail ?? null,
+      accountHistory,
+      accountCostBob: accountCosts.bob,
+      accountCostUsdt: accountCosts.usdt,
     }
   })
 

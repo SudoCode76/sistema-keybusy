@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
         query: params.get("q") ?? "",
         platform: params.get("platform") ?? "all",
         showCanceled: params.get("canceled") === "1",
+        onlyReminded: params.get("reminded") === "1",
       })
     )
   } catch {

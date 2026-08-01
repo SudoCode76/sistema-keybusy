@@ -1,9 +1,16 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
+import Link from "next/link"
 
 import { InventoryActions } from "@/app/admin/accounts/inventory-actions"
+import { isAccountAvailable } from "@/app/admin/accounts/account-availability"
+import {
+  isCodexAvailable,
+  isMotherAccount,
+} from "@/app/admin/accounts/account-availability"
 import { Badge } from "@/components/ui/badge"
+import { buttonVariants } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   CardContent,
@@ -49,7 +56,11 @@ type Account = {
   two_factor_url: string | null
   notes: string | null
   spotifySeatsUsed: number
-  services?: Nested<{ name: string | null; slug: string | null }>
+  services?: Nested<{
+    name: string | null
+    slug: string | null
+    products?: Array<{ purchase_mode: string | null }>
+  }>
   providers?: Nested<{ name: string | null }>
   email_addresses?: Nested<{
     email: string
@@ -69,12 +80,27 @@ type ServiceOption = {
   id: string
   name: string
   slug: string
+  show_in_inventory_tabs?: boolean | null
+  products?: Array<{ purchase_mode: string | null }>
 }
 
 type ProviderOption = {
   id: string
   name: string
   serviceIds: string[]
+}
+
+type SpotifyClient = {
+  id: string
+  serviceAccountId: string
+  serviceAccountLabel: string
+  customerName: string
+  contact: string | null
+  profileLabel: string | null
+  startsOn: string
+  endsOn: string
+  durationMonths: number
+  status: string
 }
 
 function one<T>(value: Nested<T>) {
@@ -96,19 +122,34 @@ function accountLabel(account: Account) {
 
 export function AccountsTable({
   accounts,
-  linkedAccountIds,
+  activeAccountUses,
+  spotifyClients,
   services,
   providers,
 }: {
   accounts: Account[]
-  linkedAccountIds: string[]
+  activeAccountUses: Array<{
+    serviceAccountId: string | null
+    productSlug: string | null
+  }>
+  spotifyClients: SpotifyClient[]
   services: ServiceOption[]
   providers: ProviderOption[]
 }) {
-  const [typeFilter, setTypeFilter] = useState<"mother" | "private" | "all">("mother")
+  const [typeFilter, setTypeFilter] = useState<"mother" | "private" | "codex" | "all">("mother")
+  const [platformFilter, setPlatformFilter] = useState("all")
   const [showInactive, setShowInactive] = useState(false)
+  const [onlyAvailable, setOnlyAvailable] = useState(false)
   const today = boliviaToday()
-  const linked = useMemo(() => new Set(linkedAccountIds), [linkedAccountIds])
+  const activeUses = useMemo(
+    () => new Map(
+      accounts.map((account) => [
+        account.id,
+        activeAccountUses.filter((use) => use.serviceAccountId === account.id),
+      ])
+    ),
+    [accounts, activeAccountUses]
+  )
   const replacementLabels = useMemo(
     () => new Map(accounts.map((account) => [account.id, accountLabel(account)])),
     [accounts]
@@ -117,34 +158,123 @@ export function AccountsTable({
   const filteredAccounts = accounts
     .filter((account) => showInactive || account.status === "active")
     .filter((account) => {
-      const slug = one(account.services)?.slug
+      const service = one(account.services)
+      const purchaseModes = service?.products?.map((product) => product.purchase_mode) ?? []
+      const accountIsMother = isMotherAccount(
+        purchaseModes,
+        motherSlugs.has(service?.slug ?? "")
+      )
 
-      if (typeFilter === "private") return slug === "chatgpt-private"
+      if (typeFilter === "codex") return service?.slug === "chatgpt-private"
+      if (typeFilter === "private") return !accountIsMother
       if (typeFilter === "all") return true
 
-      return motherSlugs.has(slug ?? "")
+      return accountIsMother
     })
+    .filter((account) => !platformFilter || platformFilter === "all" || one(account.services)?.slug === platformFilter)
+    .filter((account) => {
+      if (!onlyAvailable) return true
+      const uses = activeUses.get(account.id) ?? []
+      const hasCodexSale = uses.some((use) => use.productSlug === "chatgpt_codex")
+      const hasPrivateSale = uses.some((use) => use.productSlug !== "chatgpt_codex")
+
+      if (typeFilter === "codex") {
+        return isCodexAvailable(account.status, hasCodexSale)
+      }
+
+      if (one(account.services)?.slug === "chatgpt-private") {
+        return isAccountAvailable(account.status, hasPrivateSale)
+      }
+
+      return isAccountAvailable(account.status, uses.length > 0)
+    })
+  const platformStats = services.map((service) => {
+    const serviceAccounts = accounts.filter(
+      (account) => one(account.services)?.slug === service.slug
+    )
+    const available = serviceAccounts.filter((account) => {
+      const uses = activeUses.get(account.id) ?? []
+      const hasPrivateSale = uses.some((use) => use.productSlug !== "chatgpt_codex")
+      return one(account.services)?.slug === "chatgpt-private"
+        ? isAccountAvailable(account.status, hasPrivateSale)
+        : isAccountAvailable(account.status, uses.length > 0)
+    }).length
+
+    return {
+      ...service,
+      total: serviceAccounts.length,
+      active: serviceAccounts.filter((account) => account.status === "active").length,
+      available,
+    }
+  })
+  const selectPlatform = (next: string) => {
+    setPlatformFilter(next)
+    if (next === "all") return
+
+    const selectedPlatform = services.find((service) => service.slug === next)
+    const selectedIsMother = isMotherAccount(
+      selectedPlatform?.products?.map((product) => product.purchase_mode) ?? [],
+      motherSlugs.has(next)
+    )
+    setTypeFilter(selectedIsMother ? "mother" : "private")
+  }
+  const selectedTab = platformFilter === "all"
+    ? typeFilter
+    : `platform:${platformFilter}`
 
   return (
     <CardContent>
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="mb-4 flex flex-col gap-3">
         <Tabs
-          value={typeFilter}
-          onValueChange={(value) => setTypeFilter(value as "mother" | "private" | "all")}
+          className="inventory-tabs-scroll w-full min-w-0 overflow-x-auto"
+          value={selectedTab}
+          onValueChange={(value) => {
+            if (value.startsWith("platform:")) {
+              selectPlatform(value.slice("platform:".length))
+              return
+            }
+
+            const next = value as "mother" | "private" | "codex" | "all"
+            setTypeFilter(next)
+            setPlatformFilter("all")
+          }}
         >
-          <TabsList>
+          <TabsList className="w-max min-w-full justify-start gap-1 px-1 [&_[data-slot=tabs-trigger]]:px-4">
             <TabsTrigger value="mother">Cuentas madre</TabsTrigger>
-            <TabsTrigger value="private">ChatGPT privados</TabsTrigger>
+            {platformStats
+              .filter(
+                (platform) =>
+                  platform.total > 0 &&
+                  platform.show_in_inventory_tabs !== false
+              )
+              .map((platform) => (
+                <TabsTrigger
+                  key={platform.slug}
+                  value={`platform:${platform.slug}`}
+                >
+                  {platform.name}
+                </TabsTrigger>
+              ))}
+            <TabsTrigger value="codex">Codex</TabsTrigger>
             <TabsTrigger value="all">Todo</TabsTrigger>
           </TabsList>
         </Tabs>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Checkbox
-            checked={showInactive}
-            onCheckedChange={(checked) => setShowInactive(checked === true)}
-          />
-          Mostrar desactivados
-        </label>
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <label className="flex items-center gap-2">
+            <Checkbox
+              checked={onlyAvailable}
+              onCheckedChange={(checked) => setOnlyAvailable(checked === true)}
+            />
+            Solo disponibles sin cliente
+          </label>
+          <label className="flex items-center gap-2">
+            <Checkbox
+              checked={showInactive}
+              onCheckedChange={(checked) => setShowInactive(checked === true)}
+            />
+            Mostrar desactivados
+          </label>
+        </div>
       </div>
       <Table>
         <TableHeader>
@@ -162,7 +292,14 @@ export function AccountsTable({
         <TableBody>
           {filteredAccounts.map((account) => {
             const serviceSlug = one(account.services)?.slug
-            const isPrivate = serviceSlug === "chatgpt-private"
+            const codexView = typeFilter === "codex"
+            const uses = activeUses.get(account.id) ?? []
+            const hasCodexSale = uses.some(
+              (use) => use.productSlug === "chatgpt_codex"
+            )
+            const hasPrivateSale = uses.some(
+              (use) => use.productSlug !== "chatgpt_codex"
+            )
             const spotifySeatsTotal = one(
               account.spotify_family_plans
             )?.seats_total ?? null
@@ -170,7 +307,14 @@ export function AccountsTable({
               spotifySeatsTotal,
               account.spotifySeatsUsed
             )
-            const isLinked = linked.has(account.id)
+            const isLinked = codexView
+              ? hasCodexSale
+              : serviceSlug === "chatgpt-private"
+                ? hasPrivateSale
+                : uses.length > 0
+            const isAvailable = codexView
+              ? isCodexAvailable(account.status, hasCodexSale)
+              : isAccountAvailable(account.status, isLinked)
             const isMother = isMotherService(serviceSlug)
             const overdue = renewalOverdue(
               serviceSlug,
@@ -179,14 +323,15 @@ export function AccountsTable({
             )
 
             return (
-              <TableRow key={account.id}>
+              <Fragment key={account.id}>
+              <TableRow>
                 <TableCell>
                   <div className="flex flex-col items-start gap-1">
-                    <span>{account.label}</span>
+                    <span>{codexView ? `Codex · ${account.label}` : account.label}</span>
                     <span className="text-xs text-muted-foreground">
                       {account.login_email ?? account.username}
                     </span>
-                    {serviceSlug === "spotify" ? (
+                    {!codexView && serviceSlug === "spotify" ? (
                       spotifyAvailable === null ? (
                         <Badge variant="outline">Cupos sin configurar</Badge>
                       ) : (
@@ -204,7 +349,7 @@ export function AccountsTable({
                     ) : null}
                   </div>
                 </TableCell>
-                <TableCell>{one(account.services)?.name}</TableCell>
+                <TableCell>{codexView ? "Codex" : one(account.services)?.name}</TableCell>
                 <TableCell>{one(account.providers)?.name}</TableCell>
                 <TableCell>{money(account.base_cost_usdt, "USDT")} / {money(account.base_cost_bob, "BOB")}</TableCell>
                 <TableCell>
@@ -213,10 +358,10 @@ export function AccountsTable({
                       <span>{formatDate(account.renewal_due_on)}</span>
                       {!account.renewal_due_on ? (
                         <Badge variant="secondary">Sin fecha</Badge>
+                      ) : account.renewal_due_on === today ? (
+                        <Badge variant="destructive">Renovar hoy</Badge>
                       ) : overdue ? (
                         <Badge variant="destructive">Vencido</Badge>
-                      ) : account.renewal_due_on === today ? (
-                        <Badge variant="outline">Vence hoy</Badge>
                       ) : null}
                     </div>
                   ) : (
@@ -227,13 +372,14 @@ export function AccountsTable({
                 <TableCell>
                   <div className="flex flex-col gap-1">
                     <Badge variant="secondary">{account.status}</Badge>
-                    {isPrivate && account.status === "active" ? (
-                      <Badge variant={isLinked ? "destructive" : "secondary"}>
-                        {isLinked ? "En uso" : "Disponible"}
+                    {isAvailable ? (
+                      <Badge variant="secondary">
+                        {codexView ? "Codex disponible" : "Disponible sin cliente"}
                       </Badge>
-                    ) : null}
-                    {account.status !== "active" && isLinked ? (
-                      <Badge variant="destructive">En uso</Badge>
+                    ) : isLinked ? (
+                      <Badge variant="destructive">
+                        {codexView ? "Codex en uso" : "En uso"}
+                      </Badge>
                     ) : null}
                   </div>
                 </TableCell>
@@ -250,6 +396,46 @@ export function AccountsTable({
                   />
                 </TableCell>
               </TableRow>
+              {platformFilter === "spotify"
+                ? spotifyClients
+                    .filter((client) => client.serviceAccountId === account.id)
+                    .map((client) => (
+                      <TableRow className="bg-muted/20" key={client.id}>
+                        <TableCell>
+                          <div className="border-l-2 border-primary/30 pl-4">
+                            <div>{client.customerName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {client.contact}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>Cliente Spotify</TableCell>
+                        <TableCell>{client.serviceAccountLabel}</TableCell>
+                        <TableCell>-</TableCell>
+                        <TableCell>{formatDate(client.endsOn)}</TableCell>
+                        <TableCell>
+                          {client.durationMonths} {client.durationMonths === 1 ? "mes" : "meses"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <Badge variant="secondary">{client.status}</Badge>
+                            <Badge variant="outline">
+                              {client.profileLabel ?? "Cliente"}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Link
+                            className={buttonVariants({ size: "sm", variant: "outline" })}
+                            href="/admin/subscriptions"
+                          >
+                            Ver acceso
+                          </Link>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                : null}
+              </Fragment>
             )
           })}
         </TableBody>

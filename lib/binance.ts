@@ -2,7 +2,29 @@ type BinanceAd = {
   adv?: {
     price?: string
     tradeType?: string
+    isBestMatch?: boolean
+    isPromoted?: boolean
   }
+  advertiser?: {
+    userType?: string
+  }
+}
+
+export function highestUnverifiedUnpromotedPrice(ads: BinanceAd[]) {
+  const prices = ads
+    .filter(
+      ({ adv, advertiser }) =>
+        !adv?.isPromoted &&
+        advertiser?.userType?.toLowerCase() !== "merchant"
+    )
+    .map((item) => Number(item.adv?.price))
+    .filter((price) => Number.isFinite(price) && price > 0)
+
+  if (!prices.length) {
+    throw new Error("Binance no devolvio anuncios no verificados sin promocion")
+  }
+
+  return Math.max(...prices)
 }
 
 export async function fetchBinanceAverage(tradeType = "BUY") {
@@ -31,18 +53,15 @@ export async function fetchBinanceAverage(tradeType = "BUY") {
 
   const json = await response.json()
   const ads = (json.data ?? []) as BinanceAd[]
-  const prices = ads
-    .map((item) => Number(item.adv?.price))
-    .filter((price) => Number.isFinite(price) && price > 0)
-
-  if (!prices.length) {
-    throw new Error("Binance no devolvio anuncios validos")
-  }
-
-  const average = prices.reduce((sum, price) => sum + price, 0) / prices.length
+  const filteredAds = ads.filter(
+    ({ adv, advertiser }) =>
+      !adv?.isPromoted &&
+      advertiser?.userType?.toLowerCase() !== "merchant"
+  )
+  const average = highestUnverifiedUnpromotedPrice(ads)
 
   return {
     average,
-    ads,
+    ads: filteredAds,
   }
 }

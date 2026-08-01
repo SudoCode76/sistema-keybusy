@@ -1,19 +1,29 @@
 "use client"
 
 import { useActionState, useState } from "react"
-import { CheckIcon, CopyIcon, MoreHorizontalIcon } from "lucide-react"
+import {
+  BellIcon,
+  CheckIcon,
+  CopyIcon,
+  MoreHorizontalIcon,
+  RotateCcwIcon,
+  XIcon,
+} from "lucide-react"
 
 import {
   cancelSubscription,
   deleteSubscription,
+  markChatgptAccountBlocked,
   reactivateSubscription,
   registerMissingPurchaseCost,
   replaceSubscriptionAccount,
   resolveMotherAccessIssue,
   renewSubscription,
+  setRenewalMessageSent,
 } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -28,6 +38,9 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
@@ -47,6 +60,7 @@ import { money } from "@/lib/money"
 import { telegramUrl, whatsappUrl } from "@/lib/phone"
 
 import { FormSubmitButton } from "../accounts/form-submit-button"
+import { canOfferAccountReuse } from "../accounts/account-availability"
 import {
   EditSaleForm,
   type AccountOption,
@@ -73,7 +87,22 @@ type SubscriptionRow = {
   currentPriceAmount: number
   currentPriceCurrency: "BOB" | "USDT"
   currentExchangeRate: number | null
+  renewalMessageSentAt: string | null
+  renewalMessageDays: number | null
   hasPurchaseCost: boolean
+  accountHistory: Array<{
+    service_account_id: string
+    assigned_at: string
+    ended_at: string | null
+    blocked_at: string | null
+    block_reason: string | null
+    purchase_cost_bob: number
+    purchase_cost_usdt: number
+    duration_days: number
+    service_accounts: { label: string; created_at: string } | null
+  }>
+  accountCostBob: number
+  accountCostUsdt: number
   managedEmailId: string | null
   purchaseCost: {
     providerId: string | null
@@ -83,6 +112,7 @@ type SubscriptionRow = {
   accountLabel: string | null
   notes: string | null
   productName: string
+  serviceName: string
   status: string
   endsOn: string
   account: {
@@ -178,6 +208,20 @@ export function SubscriptionActions({
   const [renewOpen, setRenewOpen] = useState(false)
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [costOpen, setCostOpen] = useState(false)
+  const [blockOpen, setBlockOpen] = useState(false)
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [blockState, blockAction] = useActionState(
+    async (previousState: object, formData: FormData) => {
+      try {
+        await markChatgptAccountBlocked(formData)
+        setBlockOpen(false)
+        return {}
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : "No se pudo marcar el bloqueo" }
+      }
+    },
+    {}
+  )
   const [, replaceAction] = useActionState(
     async (previousState: object, formData: FormData) => {
       const result = await replaceSubscriptionAccount(previousState, formData)
@@ -196,6 +240,18 @@ export function SubscriptionActions({
     },
     {}
   )
+  const [cancelState, cancelAction] = useActionState(
+    async (previousState: object, formData: FormData) => {
+      try {
+        await cancelSubscription(formData)
+        setCancelOpen(false)
+        return {}
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : "No se pudo dar de baja" }
+      }
+    },
+    {}
+  )
   const subscriptionProduct = products.find(
     (product) => product.id === subscription.productId
   )
@@ -204,6 +260,10 @@ export function SubscriptionActions({
     Boolean(subscription.serviceAccountId) &&
     subscriptionProduct?.purchaseMode === "individual" &&
     subscriptionProduct.defaultPurchaseAmount > 0
+  const canKeepAccountAvailable = canOfferAccountReuse(
+    subscriptionProduct?.purchaseMode,
+    subscriptionProduct?.allowAccountReuseOnCancel ?? false
+  )
   const [replaceCurrency, setReplaceCurrency] = useState<"BOB" | "USDT">("USDT")
   const [replaceProviderId, setReplaceProviderId] = useState("none")
   const [replaceEmail, setReplaceEmail] = useState("")
@@ -261,7 +321,27 @@ export function SubscriptionActions({
       key.toLowerCase().includes("password") &&
       !["password", "platform_password", "email_password"].includes(key)
   )
-  const renewalMessage = `Hola ${subscription.customerName}, ¿desea renovar ${subscription.productName} que vence el ${formatDate(subscription.endsOn)}?`
+  const customerEmail = subscription.detail?.login_email
+  const customerPassword = subscription.detail?.login_password
+  const customerEmailPassword = subscription.detail?.email_password
+  const inventoryEmail =
+    subscription.account?.login_email ?? subscription.account?.username
+  const inventoryEmailPassword = accountSecrets.email_password
+  const hasDifferentInventory = Boolean(
+    (inventoryEmail && inventoryEmail !== customerEmail) ||
+      (platformPassword && platformPassword !== customerPassword) ||
+      (inventoryEmailPassword &&
+        inventoryEmailPassword !== customerEmailPassword) ||
+      extraPasswords.length ||
+      subscription.account?.spotify_family_plans?.invite_url ||
+      subscription.account?.spotify_family_plans?.address ||
+      subscription.account?.two_factor_url
+  )
+  const platformPasswordLabel = `Contraseña de ${subscription.serviceName}`
+  const renewalMessage =
+    subscription.serviceSlug === "spotify"
+      ? "Hola, ¿desea renovar su suscripcion a spotify?"
+      : `Hola, ¿desea renovar ${subscription.productName}?`
   const whatsapp = whatsappUrl(subscription.customerPhoneE164, renewalMessage)
   const telegram = telegramUrl(subscription.customerTelegram, renewalMessage)
 
@@ -315,10 +395,77 @@ export function SubscriptionActions({
                 Telegram
               </DropdownMenuItem>
             ) : null}
+            {!["canceled", "inactive"].includes(subscription.status) ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <BellIcon data-icon="inline-start" />
+                  Aviso de renovación
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-56">
+                  {subscription.renewalMessageSentAt ? (
+                    <>
+                      <p className="px-1.5 py-1 text-xs text-muted-foreground">
+                        {subscription.renewalMessageDays === 0
+                          ? "Último aviso: hoy"
+                          : subscription.renewalMessageDays === 1
+                            ? "Último aviso: hace 1 día"
+                            : `Último aviso: hace ${subscription.renewalMessageDays} días`}
+                      </p>
+                      <form action={setRenewalMessageSent}>
+                        <input name="id" type="hidden" value={subscription.id} />
+                        <input name="sent" type="hidden" value="1" />
+                        <FormSubmitButton
+                          className="w-full justify-start"
+                          pendingLabel="Registrando..."
+                          size="sm"
+                          variant="ghost"
+                        >
+                          <RotateCcwIcon data-icon="inline-start" />
+                          Registrar otro aviso
+                        </FormSubmitButton>
+                      </form>
+                      <DropdownMenuSeparator />
+                      <form action={setRenewalMessageSent}>
+                        <input name="id" type="hidden" value={subscription.id} />
+                        <input name="sent" type="hidden" value="0" />
+                        <FormSubmitButton
+                          className="w-full justify-start text-muted-foreground"
+                          pendingLabel="Quitando..."
+                          size="sm"
+                          variant="ghost"
+                        >
+                          <XIcon data-icon="inline-start" />
+                          Quitar aviso
+                        </FormSubmitButton>
+                      </form>
+                    </>
+                  ) : (
+                    <form action={setRenewalMessageSent}>
+                      <input name="id" type="hidden" value={subscription.id} />
+                      <input name="sent" type="hidden" value="1" />
+                      <FormSubmitButton
+                        className="w-full justify-start"
+                        pendingLabel="Marcando..."
+                        size="sm"
+                        variant="ghost"
+                      >
+                        <BellIcon data-icon="inline-start" />
+                        Marcar aviso enviado
+                      </FormSubmitButton>
+                    </form>
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : null}
             {subscription.serviceAccountId &&
             subscriptionProduct?.purchaseMode === "individual" ? (
               <DropdownMenuItem onClick={() => setReplaceOpen(true)}>
                 Cambiar cuenta
+              </DropdownMenuItem>
+            ) : null}
+            {subscription.serviceSlug === "chatgpt-private" && subscription.serviceAccountId ? (
+              <DropdownMenuItem onClick={() => setBlockOpen(true)}>
+                Marcar cuenta bloqueada
               </DropdownMenuItem>
             ) : null}
             {canRegisterPurchaseCost ? (
@@ -337,6 +484,10 @@ export function SubscriptionActions({
                   Reactivar
                 </FormSubmitButton>
               </form>
+            ) : canKeepAccountAvailable ? (
+              <DropdownMenuItem onClick={() => setCancelOpen(true)}>
+                Dar de baja
+              </DropdownMenuItem>
             ) : (
               <form action={cancelSubscription}>
                 <input name="id" type="hidden" value={subscription.id} />
@@ -363,6 +514,66 @@ export function SubscriptionActions({
           </form>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Dar de baja</DialogTitle>
+            <DialogDescription>
+              La venta se cancelará y podrás reutilizar la cuenta en otra venta.
+            </DialogDescription>
+          </DialogHeader>
+          <form action={cancelAction}>
+            <FieldGroup>
+              <input name="id" type="hidden" value={subscription.id} />
+              <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+                <Checkbox name="keep_account_available" value="1" />
+                <span>
+                  <span className="font-medium">Mantener cuenta disponible para otra venta</span>
+                  <span className="block text-muted-foreground">Desmarcada, la cuenta quedará inactiva.</span>
+                </span>
+              </label>
+              {"error" in cancelState && cancelState.error ? (
+                <Alert variant="destructive">
+                  <AlertTitle>No se pudo dar de baja</AlertTitle>
+                  <AlertDescription>{String(cancelState.error)}</AlertDescription>
+                </Alert>
+              ) : null}
+              <FormSubmitButton pendingLabel="Dando de baja...">
+                Confirmar baja
+              </FormSubmitButton>
+            </FieldGroup>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={blockOpen} onOpenChange={setBlockOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Marcar cuenta bloqueada</DialogTitle>
+            <DialogDescription>
+              La venta seguirá activa y estos días se repondrán al cambiar la cuenta.
+            </DialogDescription>
+          </DialogHeader>
+          <form action={blockAction}>
+            <FieldGroup>
+              <input name="subscription_id" type="hidden" value={subscription.id} />
+              <Field>
+                <FieldLabel>Fecha de bloqueo</FieldLabel>
+                <Input defaultValue={new Date().toISOString().slice(0, 10)} name="blocked_at" required type="date" />
+              </Field>
+              <Field>
+                <FieldLabel>Motivo</FieldLabel>
+                <Input name="block_reason" placeholder="Aviso del cliente" />
+              </Field>
+              {"error" in blockState && blockState.error ? (
+                <Alert variant="destructive"><AlertDescription>{String(blockState.error)}</AlertDescription></Alert>
+              ) : null}
+              <FormSubmitButton pendingLabel="Marcando...">Marcar bloqueada</FormSubmitButton>
+            </FieldGroup>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={costOpen} onOpenChange={setCostOpen}>
         <DialogContent>
@@ -405,55 +616,55 @@ export function SubscriptionActions({
             <DialogTitle>Cuenta del usuario</DialogTitle>
             <DialogDescription>{subscription.productName}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2">
-            <CopyLine
-              label="Correo venta"
-              value={subscription.detail?.login_email}
-            />
-            <CopyLine
-              label="Correo inventario"
-              value={
-                subscription.account?.login_email ??
-                subscription.account?.username
-              }
-            />
-            <CopyLine
-              label="Contrasena venta"
-              value={subscription.detail?.login_password}
-            />
-            <CopyLine label="Contrasena inventario" value={platformPassword} />
-            <CopyLine
-              label="Contrasena correo venta"
-              value={subscription.detail?.email_password}
-            />
-            <CopyLine
-              label="Contrasena correo inventario"
-              value={accountSecrets.email_password}
-            />
-            {extraPasswords.map(([key, value]) => (
-              <CopyLine key={key} label={key} value={value} />
-            ))}
-            <CopyLine
-              label="Correo invitado"
-              value={subscription.detail?.invitation_email}
-            />
-            <CopyLine
-              label="Perfil"
-              value={subscription.detail?.profile_label}
-            />
-            <CopyLine
-              label="Link plan familiar"
-              value={subscription.account?.spotify_family_plans?.invite_url}
-            />
-            <CopyLine
-              label="Direccion plan familiar"
-              value={subscription.account?.spotify_family_plans?.address}
-            />
-            <CopyLine
-              label="Link 2FA"
-              value={subscription.account?.two_factor_url}
-            />
-            <CopyLine label="Notas" value={subscription.detail?.notes} />
+          <div className="grid gap-4">
+            <section className="grid gap-2" aria-labelledby={`customer-account-${subscription.id}`}>
+              <h3 className="text-sm font-medium" id={`customer-account-${subscription.id}`}>
+                Cuenta del cliente
+              </h3>
+              <CopyLine label="Correo o usuario de acceso" value={customerEmail} />
+              <CopyLine label={platformPasswordLabel} value={customerPassword} />
+              <CopyLine label="Contraseña del correo" value={customerEmailPassword} />
+              <CopyLine label="Correo invitado" value={subscription.detail?.invitation_email} />
+              <CopyLine label="Perfil" value={subscription.detail?.profile_label} />
+              <CopyLine label="Notas" value={subscription.detail?.notes} />
+            </section>
+
+            {hasDifferentInventory ? (
+              <section className="grid gap-2 border-t pt-4" aria-labelledby={`inventory-account-${subscription.id}`}>
+                <h3 className="text-sm font-medium" id={`inventory-account-${subscription.id}`}>
+                  {subscription.serviceSlug === "spotify" ? "Cuenta madre Spotify" : "Cuenta de inventario"}
+                </h3>
+                <CopyLine label="Correo o usuario de acceso" value={inventoryEmail} />
+                <CopyLine label={platformPasswordLabel} value={platformPassword} />
+                <CopyLine label="Contraseña del correo" value={inventoryEmailPassword} />
+                {extraPasswords.map(([key, value]) => (
+                  <CopyLine key={key} label={key} value={value} />
+                ))}
+                <CopyLine label="Enlace del plan familiar" value={subscription.account?.spotify_family_plans?.invite_url} />
+                <CopyLine label="Dirección del plan familiar" value={subscription.account?.spotify_family_plans?.address} />
+                <CopyLine label="Enlace 2FA" value={subscription.account?.two_factor_url} />
+              </section>
+            ) : null}
+            {subscription.serviceSlug === "chatgpt-private" ? (
+              <>
+                <div className="mt-4 rounded-lg border p-3 text-sm">
+                  <div className="font-medium">Gasto del cliente</div>
+                  <div>{money(subscription.accountCostBob, "BOB")} · {money(subscription.accountCostUsdt, "USDT")}</div>
+                </div>
+                <div className="mt-4 rounded-lg border p-3 text-sm">
+                  <div className="mb-2 font-medium">Historial de cuentas</div>
+                  <div className="grid gap-2">
+                    {subscription.accountHistory.map((history) => {
+                      return <div key={history.service_account_id + history.assigned_at} className="border-b pb-2 last:border-0">
+                        <div>{history.service_accounts?.label ?? history.service_account_id} · {history.duration_days} días</div>
+                        <div className="text-muted-foreground">Desde {formatDate(history.service_accounts?.created_at ?? history.assigned_at)}{history.ended_at ? ` hasta ${formatDate(history.ended_at)}` : " · actual"}</div>
+                        {history.blocked_at ? <div className="text-destructive">Bloqueada {formatDate(history.blocked_at)}{history.block_reason ? ` · ${history.block_reason}` : ""}</div> : null}
+                      </div>
+                    })}
+                  </div>
+                </div>
+              </>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>

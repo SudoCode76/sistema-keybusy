@@ -34,6 +34,8 @@ function AuthForm({
   onModeChange: (mode: AuthMode) => void
 }) {
   const [state, action, pending] = useActionState(authenticate, {})
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const isSignup = mode === "signup"
 
   return (
@@ -62,6 +64,8 @@ function AuthForm({
                 type="email"
                 placeholder="tu@correo.com"
                 autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
                 disabled={pending}
                 required
               />
@@ -73,6 +77,8 @@ function AuthForm({
                 name="password"
                 type="password"
                 autoComplete={isSignup ? "new-password" : "current-password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
                 disabled={pending}
                 required
               />

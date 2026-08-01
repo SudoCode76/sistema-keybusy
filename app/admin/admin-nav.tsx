@@ -11,6 +11,7 @@ import {
   PackageIcon,
   ReceiptTextIcon,
   RepeatIcon,
+  Settings2Icon,
   WalletCardsIcon,
 } from "lucide-react"
 
@@ -30,6 +31,7 @@ const nav = [
   { href: "/admin/costs", label: "Costos", icon: ReceiptTextIcon },
   { href: "/admin/providers", label: "Proveedores", icon: WalletCardsIcon },
   { href: "/admin/exchange-rates", label: "Cambio", icon: BadgeDollarSignIcon },
+  { href: "/admin/settings", label: "Configuración", icon: Settings2Icon },
 ]
 
 function isActive(pathname: string, href: string) {

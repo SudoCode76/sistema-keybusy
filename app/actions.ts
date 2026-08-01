@@ -8,9 +8,13 @@ import {
   resolveCustomerId,
   type DuplicateCheck,
 } from "@/app/admin/subscriptions/duplicate-check"
-import { boliviaToday } from "@/app/admin/subscriptions/mother-access"
+import {
+  boliviaToday,
+  renewalOverdue,
+} from "@/app/admin/subscriptions/mother-access"
 import { requireAdmin, requireUser } from "@/lib/auth"
 import { fetchBinanceAverage } from "@/lib/binance"
+import { calendarDaysBetween } from "@/lib/chatgpt-account-history"
 import { formNumber, formText, toMoneyValues, type Currency } from "@/lib/money"
 import {
   isValidTelegramUsername,
@@ -150,7 +154,9 @@ async function motherAccountRenewalError(
     .single()
 
   if (error || !data) return error?.message ?? "Cuenta madre no encontrada"
-  return data.renewal_due_on && data.renewal_due_on < boliviaToday()
+  const serviceSlug =
+    productSlug === "spotify_family_member" ? "spotify" : "netflix"
+  return renewalOverdue(serviceSlug, data.renewal_due_on)
     ? "La cuenta madre tiene el pago vencido. Registra su renovación antes de usarla."
     : null
 }
@@ -427,8 +433,8 @@ export async function authenticate(
   if (result.error) {
     return {
       error:
-        result.error.message === "Invalid login credentials"
-          ? "No existe una cuenta con esos datos. Usa Crear cuenta si es tu primer ingreso."
+        result.error.code === "invalid_credentials"
+          ? "Correo o contraseña incorrectos."
           : result.error.message,
     }
   }
@@ -709,6 +715,16 @@ export async function createPlatformWithProduct(formData: FormData) {
     )
   }
 
+  await insertOrThrow(
+    supabase
+      .from("products")
+      .update({
+        allow_account_reuse_on_cancel:
+          formData.get("allow_account_reuse_on_cancel") === "1",
+      })
+      .eq("slug", productSlug)
+  )
+
   revalidatePath("/admin/services")
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/accounts")
@@ -747,6 +763,8 @@ export async function createProduct(formData: FormData) {
         ),
         default_purchase_exchange_rate:
           formNumber(formData.get("default_purchase_exchange_rate")) || null,
+        allow_account_reuse_on_cancel:
+          formData.get("allow_account_reuse_on_cancel") === "1",
       })
       .select("id")
       .single()
@@ -754,7 +772,6 @@ export async function createProduct(formData: FormData) {
 
   revalidatePath("/admin/services")
   revalidatePath("/admin/subscriptions")
-  redirect("/admin/services?saved=1")
 }
 
 export async function updateProductPrice(formData: FormData) {
@@ -790,6 +807,8 @@ export async function updateProductPrice(formData: FormData) {
         ),
         default_purchase_exchange_rate:
           formNumber(formData.get("default_purchase_exchange_rate")) || null,
+        allow_account_reuse_on_cancel:
+          formData.get("allow_account_reuse_on_cancel") === "1",
       })
       .eq("id", requireValue(formData.get("id"), "Producto"))
       .select("id")
@@ -843,6 +862,56 @@ export async function setProductStatus(formData: FormData) {
       .single()
   )
 
+  revalidatePath("/admin/services")
+  revalidatePath("/admin/subscriptions")
+}
+
+export async function setProductAccountReuse(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const productId = requireValue(formData.get("id"), "Producto")
+  const enabled = formData.get("enabled") === "1"
+  const { data: product, error: productError } = await supabase
+    .from("products")
+    .select("purchase_mode")
+    .eq("id", productId)
+    .single()
+
+  if (productError || !product) throw productError ?? new Error("Producto no encontrado")
+  if (product.purchase_mode !== "individual") {
+    throw new Error("Solo las cuentas privadas individuales pueden reutilizarse")
+  }
+
+  await insertOrThrow(
+    supabase
+      .from("products")
+      .update({ allow_account_reuse_on_cancel: enabled })
+      .eq("id", productId)
+      .select("id")
+      .single()
+  )
+
+  revalidatePath("/admin/services")
+  revalidatePath("/admin/subscriptions")
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/settings")
+}
+
+export async function setServiceInventoryTabVisibility(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const serviceId = requireValue(formData.get("id"), "Plataforma")
+  const visible = formData.get("visible") === "1"
+
+  await insertOrThrow(
+    supabase
+      .from("services")
+      .update({ show_in_inventory_tabs: visible })
+      .eq("id", serviceId)
+      .select("id")
+      .single()
+  )
+
+  revalidatePath("/admin/settings")
+  revalidatePath("/admin/accounts")
   revalidatePath("/admin/services")
   revalidatePath("/admin/subscriptions")
 }
@@ -1274,6 +1343,26 @@ export async function markAccountDead(formData: FormData) {
   revalidatePath("/admin/emails")
 }
 
+export async function markChatgptAccountBlocked(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const subscriptionId = requireValue(formData.get("subscription_id"), "Venta")
+  const blockedAt = formText(formData.get("blocked_at")) ?? new Date().toISOString().slice(0, 10)
+  const reason = formText(formData.get("block_reason"))
+  const { data: subscription } = await supabase
+    .from("subscriptions")
+    .select("service_account_id, products!inner(slug)")
+    .eq("id", subscriptionId)
+    .single()
+  if (!subscription || subscription.products[0]?.slug !== "chatgpt_private" || !subscription.service_account_id) {
+    throw new Error("La venta no corresponde a ChatGPT privado")
+  }
+  await insertOrThrow(
+    supabase.from("subscription_account_history").update({ blocked_at: blockedAt, block_reason: reason })
+      .eq("subscription_id", subscriptionId).eq("service_account_id", subscription.service_account_id).is("ended_at", null)
+  )
+  revalidatePath("/admin/subscriptions")
+}
+
 export async function replaceSubscriptionAccount(
   _state: SaleState,
   formData: FormData
@@ -1320,7 +1409,7 @@ export async function replaceSubscriptionAccount(
 
   const { data: oldAccount, error: oldAccountError } = await supabase
     .from("service_accounts")
-    .select("service_id, provider_id")
+    .select("service_id, provider_id, created_at")
     .eq("id", oldAccountId)
     .single()
 
@@ -1396,10 +1485,44 @@ export async function replaceSubscriptionAccount(
       .eq("id", oldAccountId)
   )
 
+  const { data: currentSubscription } = await supabase
+    .from("subscriptions")
+    .select("starts_on, ends_on, product_id")
+    .eq("id", subscriptionId)
+    .single()
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: currentHistory } = await supabase
+    .from("subscription_account_history")
+    .select("id, assigned_at, blocked_at")
+    .eq("subscription_id", subscriptionId)
+    .eq("service_account_id", oldAccountId)
+    .is("ended_at", null)
+    .maybeSingle()
+  const blockedAt = currentHistory?.blocked_at?.slice(0, 10)
+  const blockedDays = blockedAt ? calendarDaysBetween(blockedAt, today) : 0
+  await insertOrThrow(
+    supabase.from("subscription_account_history").update({ ended_at: today })
+      .eq("id", currentHistory?.id ?? "")
+  )
+  await insertOrThrow(
+    supabase.from("subscription_account_history").insert({
+      subscription_id: subscriptionId,
+      service_account_id: newAccount.id,
+      assigned_at: new Date().toISOString(),
+      purchase_cost_bob: values.bob,
+      purchase_cost_usdt: values.usdt,
+    })
+  )
+
   await insertOrThrow(
     supabase
       .from("subscriptions")
-      .update({ service_account_id: newAccount.id })
+      .update({
+        service_account_id: newAccount.id,
+        ...(currentSubscription && blockedDays > 0
+          ? { ends_on: new Date(Date.parse(`${currentSubscription.ends_on}T00:00:00Z`) + blockedDays * 86_400_000).toISOString().slice(0, 10) }
+          : {}),
+      })
       .eq("id", subscriptionId)
   )
 
@@ -1451,6 +1574,9 @@ export async function createSale(
   const priceAmount = formText(formData.get("current_price_amount"))
   const productSlug = requireValue(formData.get("product_slug"), "Servicio")
   const existingAccountId = optionalId(formData.get("service_account_id"))
+  const reusableAccessSubscriptionId = optionalId(
+    formData.get("reusable_access_subscription_id")
+  )
   const phone = formText(formData.get("phone")) ?? ""
   const telegramRaw = formText(formData.get("telegram_username"))
   const telegramUsername = normalizeTelegramUsername(telegramRaw)
@@ -1467,20 +1593,21 @@ export async function createSale(
   }
   let managedEmail: ManagedEmail | null = null
   try {
-    managedEmail = await selectedManagedEmail(supabase, formData)
+    managedEmail = reusableAccessSubscriptionId
+      ? null
+      : await selectedManagedEmail(supabase, formData)
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "Correo no válido",
     }
   }
   let loginEmail = managedEmail?.email ?? formText(formData.get("login_email"))
-  const invitationEmail = formText(formData.get("invitation_email"))
-  const accountEmail = loginEmail ?? invitationEmail
+  let invitationEmail = formText(formData.get("invitation_email"))
+  let accountEmail = loginEmail ?? invitationEmail
   let loginPassword = formText(formData.get("login_password"))
   let emailPassword =
     managedEmail?.email_password ?? formText(formData.get("email_password"))
   const requestedProfileLabel = formText(formData.get("profile_label"))
-  const managedEmailMode = formText(formData.get("managed_email_mode"))
   let saleAccountId = existingAccountId
   let linkedAccountCredentials: {
     emailPassword: string | null
@@ -1508,6 +1635,81 @@ export async function createSale(
 
   if (productError || !product) {
     return { error: productError?.message ?? "Item vendible invalido" }
+  }
+
+  if (reusableAccessSubscriptionId) {
+    if (productSlug !== "spotify_family_member") {
+      return { error: "La cuenta liberada solo puede reutilizarse en Spotify familiar" }
+    }
+
+    const { data: source, error: sourceError } = await supabase
+      .from("subscriptions")
+      .select(
+        "id, service_account_id, status, slot_label, ends_on, products!inner(slug), subscription_access_details(login_email, login_password, email_password, invitation_email), email_usages(email_address_id, ended_at)"
+      )
+      .eq("id", reusableAccessSubscriptionId)
+      .eq("products.slug", "spotify_family_member")
+      .single()
+
+    if (sourceError || !source) {
+      return { error: "La cuenta liberada ya no está disponible" }
+    }
+
+    const sourceReleased =
+      ["canceled", "inactive"].includes(source.status) ||
+      source.ends_on < boliviaToday()
+    const sourceDetail = Array.isArray(source.subscription_access_details)
+      ? (source.subscription_access_details[0] ?? null)
+      : source.subscription_access_details
+
+    if (
+      !sourceReleased ||
+      source.slot_label === "Titular" ||
+      !source.service_account_id ||
+      !sourceDetail?.login_email
+    ) {
+      return { error: "La cuenta seleccionada no está liberada para reutilizarse" }
+    }
+
+    const { data: activeReuse, error: activeReuseError } = await supabase
+      .from("subscriptions")
+      .select(
+        "id, status, products!inner(slug), subscription_access_details!inner(login_email)"
+      )
+      .eq("products.slug", "spotify_family_member")
+      .eq("subscription_access_details.login_email", sourceDetail.login_email)
+      .not("status", "in", "(canceled,inactive)")
+      .neq("id", reusableAccessSubscriptionId)
+      .limit(1)
+
+    if (activeReuseError) return { error: activeReuseError.message }
+    if (activeReuse?.length) {
+      return { error: "Esta cuenta Spotify ya fue asignada a otro cliente" }
+    }
+
+    loginEmail = sourceDetail.login_email
+    saleAccountId = source.service_account_id
+    loginPassword = sourceDetail.login_password
+    emailPassword = sourceDetail.email_password
+    invitationEmail = sourceDetail.invitation_email
+    accountEmail = loginEmail ?? invitationEmail
+
+    const sourceEmailUsage =
+      source.email_usages.find((usage) => !usage.ended_at) ??
+      source.email_usages[0]
+    if (sourceEmailUsage?.email_address_id) {
+      const { data: sourceManagedEmail, error: sourceManagedEmailError } =
+        await supabase
+          .from("email_addresses")
+          .select("id, email, email_password, origin, provider_id, status")
+          .eq("id", sourceEmailUsage.email_address_id)
+          .eq("origin", "self")
+          .eq("status", "active")
+          .maybeSingle()
+
+      if (sourceManagedEmailError) return { error: sourceManagedEmailError.message }
+      managedEmail = sourceManagedEmail
+    }
   }
 
   const profileLabel =
@@ -1651,10 +1853,22 @@ export async function createSale(
       loginPassword: secrets.platform_password ?? secrets.password ?? null,
     }
 
-    if (product.purchase_mode === "individual") {
+    if (productSlug === "chatgpt_codex") {
+      const { data: usedCodexSales, error: codexSalesError } = await supabase
+        .from("subscriptions")
+        .select("id, products!inner(slug)")
+        .eq("service_account_id", saleAccountId)
+        .eq("status", "active")
+        .eq("products.slug", "chatgpt_codex")
+
+      if (codexSalesError) return { error: codexSalesError.message }
+      if (usedCodexSales?.length) {
+        return { error: "Esta cuenta ya tiene un cliente Codex activo" }
+      }
+    } else if (product.purchase_mode === "individual") {
       const { data: usedSales, error: usedSalesError } = await supabase
         .from("subscriptions")
-        .select("id, status")
+        .select("id, status, products(slug)")
         .eq("service_account_id", saleAccountId)
 
       if (usedSalesError) {
@@ -1663,7 +1877,18 @@ export async function createSale(
 
       if (
         (usedSales ?? []).some(
-          (sale) => !["canceled", "inactive"].includes(sale.status)
+          (sale) => {
+            const products = (sale as unknown as {
+              products?: { slug?: string } | Array<{ slug?: string }>
+            }).products
+            const relatedProductSlug = Array.isArray(products)
+              ? products[0]?.slug
+              : products?.slug
+            return (
+              !["canceled", "inactive"].includes(sale.status) &&
+              relatedProductSlug !== "chatgpt_codex"
+            )
+          }
         )
       ) {
         return { error: "Esta cuenta ya esta enlazada a una venta activa" }
@@ -1839,7 +2064,7 @@ export async function createSale(
       p_login_email: loginEmail,
       p_login_password: loginPassword,
       p_email_password: emailPassword,
-      p_invitation_email: formText(formData.get("invitation_email")),
+      p_invitation_email: invitationEmail,
       p_profile_label: profileLabel,
       p_customer_name: formText(formData.get("customer_name")),
       p_account_label: formText(formData.get("account_label")),
@@ -1852,12 +2077,24 @@ export async function createSale(
       p_visible_to_customer: true,
       p_visible_fields: visibleFields,
       p_notes: null,
-      p_manage_email: Boolean(loginEmail && managedEmailMode),
+      p_manage_email: Boolean(loginEmail && managedEmail),
       p_email_address_id: managedEmail?.id ?? null,
       p_email_origin: formText(formData.get("email_origin")) ?? "self",
       p_email_provider_id: optionalId(formData.get("email_provider_id")),
     }
   )
+
+  if (!error && subscriptionId && productSlug === "chatgpt_private" && saleAccountId) {
+    await insertOrThrow(
+      supabase.from("subscription_account_history").insert({
+        subscription_id: subscriptionId,
+        service_account_id: saleAccountId,
+        assigned_at: new Date().toISOString(),
+        purchase_cost_bob: individualCost?.amountBob ?? 0,
+        purchase_cost_usdt: individualCost?.amountUsdt ?? 0,
+      })
+    )
+  }
 
   if (error) {
     return { error: error.message }
@@ -1881,8 +2118,8 @@ export async function createSale(
   }
 
   revalidatePath("/admin")
-  revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
   revalidatePath("/admin/costs")
   revalidatePath("/portal")
@@ -1908,6 +2145,7 @@ export async function deleteSubscription(formData: FormData) {
   await insertOrThrow(supabase.from("subscriptions").delete().eq("id", id))
 
   revalidatePath("/admin")
+  revalidatePath("/admin/accounts")
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/payments")
   revalidatePath("/admin/costs")
@@ -2136,6 +2374,7 @@ export async function renewSubscription(formData: FormData) {
         current_price_amount: amount,
         current_price_currency: paymentCurrency,
         current_exchange_rate: rate || null,
+        renewal_message_sent_at: null,
       })
       .eq("id", id)
   )
@@ -2188,32 +2427,65 @@ export async function cancelSubscription(formData: FormData) {
   const { supabase } = await requireAdmin()
   const id = requireValue(formData.get("id"), "Venta")
 
-  await insertOrThrow(
-    supabase.from("subscriptions").update({ status: "canceled" }).eq("id", id)
-  )
+  const { error } = await supabase.rpc("cancel_subscription", {
+    p_subscription_id: id,
+    p_keep_account_available: formData.get("keep_account_available") === "1",
+  })
+  if (error) throw new Error(error.message)
+
   await insertOrThrow(
     supabase
-      .from("billing_cycles")
-      .update({ status: "canceled" })
-      .eq("subscription_id", id)
-      .eq("status", "pending")
+      .from("subscriptions")
+      .update({ renewal_message_sent_at: null })
+      .eq("id", id)
   )
 
   revalidatePath("/admin")
+  revalidatePath("/admin/accounts")
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
   revalidatePath("/portal")
+}
+
+export async function setRenewalMessageSent(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const id = requireValue(formData.get("id"), "Venta")
+  const sent = formData.get("sent") === "1"
+
+  if (sent) {
+    const { data: subscription, error } = await supabase
+      .from("subscriptions")
+      .select("status")
+      .eq("id", id)
+      .single()
+
+    if (error || !subscription) throw error ?? new Error("No se encontró la venta")
+    if (["canceled", "inactive"].includes(subscription.status)) {
+      throw new Error("No se puede avisar una venta dada de baja")
+    }
+  }
+
+  await insertOrThrow(
+    supabase
+      .from("subscriptions")
+      .update({ renewal_message_sent_at: sent ? new Date().toISOString() : null })
+      .eq("id", id)
+  )
+
+  revalidatePath("/admin/subscriptions")
 }
 
 export async function reactivateSubscription(formData: FormData) {
   const { supabase } = await requireAdmin()
   const id = requireValue(formData.get("id"), "Venta")
 
-  await insertOrThrow(
-    supabase.from("subscriptions").update({ status: "active" }).eq("id", id)
-  )
+  const { error } = await supabase.rpc("reactivate_subscription", {
+    p_subscription_id: id,
+  })
+  if (error) throw new Error(error.message)
 
   revalidatePath("/admin")
+  revalidatePath("/admin/accounts")
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
   revalidatePath("/portal")

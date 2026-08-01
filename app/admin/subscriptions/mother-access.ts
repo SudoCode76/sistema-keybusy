@@ -22,7 +22,7 @@ export function renewalOverdue(
   renewalDueOn: string | null | undefined,
   today = boliviaToday()
 ) {
-  return isMotherService(serviceSlug) && Boolean(renewalDueOn && renewalDueOn < today)
+  return isMotherService(serviceSlug) && Boolean(renewalDueOn && renewalDueOn <= today)
 }
 
 export function motherAccessIssueOn({
@@ -47,12 +47,14 @@ export function motherAccessIssueOn({
   if (
     !isMotherService(serviceSlug) ||
     ["canceled", "inactive"].includes(status) ||
-    endsOn < today
+    endsOn <= today
   ) {
     return null
   }
 
-  const overdueOn = renewalDueOn && renewalDueOn < today ? renewalDueOn : null
+  const overdueOn = renewalOverdue(serviceSlug, renewalDueOn, today)
+    ? renewalDueOn
+    : null
   const issueOn =
     accessIssueOn && overdueOn
       ? accessIssueOn > overdueOn

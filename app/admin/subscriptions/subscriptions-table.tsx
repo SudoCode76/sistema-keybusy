@@ -54,7 +54,22 @@ export type SubscriptionRow = {
   currentPriceAmount: number
   currentPriceCurrency: "BOB" | "USDT"
   currentExchangeRate: number | null
+  renewalMessageSentAt: string | null
+  renewalMessageDays: number | null
   hasPurchaseCost: boolean
+  accountHistory: Array<{
+    service_account_id: string
+    assigned_at: string
+    ended_at: string | null
+    blocked_at: string | null
+    block_reason: string | null
+    purchase_cost_bob: number
+    purchase_cost_usdt: number
+    duration_days: number
+    service_accounts: { label: string; created_at: string } | null
+  }>
+  accountCostBob: number
+  accountCostUsdt: number
   managedEmailId: string | null
   purchaseCost: {
     providerId: string | null
@@ -125,6 +140,7 @@ export function SubscriptionsTable({
 }) {
   const [query, setQuery] = useState("")
   const [showCanceled, setShowCanceled] = useState(false)
+  const [onlyReminded, setOnlyReminded] = useState(false)
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState(initialRows)
   const [total, setTotal] = useState(initialTotal)
@@ -132,7 +148,7 @@ export function SubscriptionsTable({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const firstLoad = useRef(true)
-  const initialVersion = initialRows.map((row) => `${row.id}:${row.status}:${row.endsOn}`).join("|")
+  const initialVersion = initialRows.map((row) => `${row.id}:${row.status}:${row.endsOn}:${row.renewalMessageSentAt ?? ""}`).join("|")
   const totalPages = Math.max(1, Math.ceil(total / 20))
 
   useEffect(() => {
@@ -150,6 +166,7 @@ export function SubscriptionsTable({
         const params = new URLSearchParams({ page: String(page), platform })
         if (query.trim()) params.set("q", query.trim())
         if (showCanceled) params.set("canceled", "1")
+        if (onlyReminded) params.set("reminded", "1")
 
         const response = await fetch(`/admin/subscriptions/data?${params}`, {
           signal: controller.signal,
@@ -175,7 +192,7 @@ export function SubscriptionsTable({
       clearTimeout(timeout)
       controller.abort()
     }
-  }, [initialVersion, page, platform, query, showCanceled])
+  }, [initialVersion, onlyReminded, page, platform, query, showCanceled])
 
   return (
     <div className="min-w-0 flex flex-col gap-4">
@@ -196,10 +213,23 @@ export function SubscriptionsTable({
             id="show-canceled"
             onCheckedChange={(checked) => {
               setShowCanceled(checked === true)
+              if (checked) setOnlyReminded(false)
               setPage(1)
             }}
           />
           <FieldLabel htmlFor="show-canceled">Ver dados de baja</FieldLabel>
+        </Field>
+        <Field orientation="horizontal">
+          <Checkbox
+            checked={onlyReminded}
+            id="only-reminded"
+            onCheckedChange={(checked) => {
+              setOnlyReminded(checked === true)
+              if (checked) setShowCanceled(false)
+              setPage(1)
+            }}
+          />
+          <FieldLabel htmlFor="only-reminded">Solo avisados sin renovar</FieldLabel>
         </Field>
       </div>
       <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
@@ -299,12 +329,26 @@ export function SubscriptionsTable({
                     <MobileLabel>Estado</MobileLabel>
                     <div className="flex flex-col items-start gap-1">
                       <Badge variant="secondary">{item.status}</Badge>
+                      {item.renewalMessageDays !== null ? (
+                        <Badge variant="outline">
+                          {item.renewalMessageDays === 0
+                            ? "Avisado hoy"
+                            : item.renewalMessageDays === 1
+                              ? "Avisado hace 1 día"
+                              : `Avisado hace ${item.renewalMessageDays} días`}
+                        </Badge>
+                      ) : null}
                       {item.motherAccessIssueOn ? (
                         <Badge
                           className="max-w-full whitespace-normal"
                           variant="destructive"
                         >
                           Acceso afectado · {formatDate(item.motherAccessIssueOn)}
+                        </Badge>
+                      ) : null}
+                      {item.accountHistory.find((history) => !history.ended_at)?.blocked_at ? (
+                        <Badge className="max-w-full whitespace-normal" variant="destructive">
+                          Cuenta bloqueada · {formatDate(item.accountHistory.find((history) => !history.ended_at)!.blocked_at!)}
                         </Badge>
                       ) : null}
                     </div>
@@ -340,12 +384,18 @@ export function SubscriptionsTable({
                         currentPriceAmount: item.currentPriceAmount,
                         currentPriceCurrency: item.currentPriceCurrency,
                         currentExchangeRate: item.currentExchangeRate,
+                        renewalMessageSentAt: item.renewalMessageSentAt,
+                        renewalMessageDays: item.renewalMessageDays,
                         hasPurchaseCost: item.hasPurchaseCost,
+                        accountHistory: item.accountHistory,
+                        accountCostBob: item.accountCostBob,
+                        accountCostUsdt: item.accountCostUsdt,
                         managedEmailId: item.managedEmailId,
                         purchaseCost: item.purchaseCost,
                         accountLabel: item.accountLabel,
                         notes: item.notes,
                         productName: item.productName,
+                        serviceName: item.serviceName,
                         status: item.status,
                         detail: item.detail,
                         account: item.account,

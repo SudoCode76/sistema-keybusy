@@ -46,7 +46,7 @@ test("detecta ventas por servicio y clasifica vigencia", () => {
     ["sale-1", "sale-2"]
   )
   assert.equal(accessStatus("2026-07-14", "2026-07-15"), "expired")
-  assert.equal(accessStatus("2026-07-15", "2026-07-15"), "active")
+  assert.equal(accessStatus("2026-07-15", "2026-07-15"), "expired")
 })
 
 test("resuelve un cliente por teléfono o Telegram y bloquea cruces", () => {

@@ -156,23 +156,32 @@ export function NewPlatformDialog() {
               </Field>
             </div>
             {mode === "individual" ? (
-              <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
-                <Field>
-                  <FieldLabel htmlFor="platform_purchase_price">Compra default</FieldLabel>
-                  <Input id="platform_purchase_price" name="default_purchase_amount" type="number" step="0.01" />
-                </Field>
-                <Field>
-                  <FieldLabel>Moneda compra</FieldLabel>
-                  <Select name="default_purchase_currency" defaultValue="USDT">
-                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectGroup><SelectItem value="USDT">USDT</SelectItem><SelectItem value="BOB">BOB</SelectItem></SelectGroup></SelectContent>
-                  </Select>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="platform_purchase_rate">Cambio compra</FieldLabel>
-                  <Input id="platform_purchase_rate" name="default_purchase_exchange_rate" type="number" step="0.000001" />
-                </Field>
-              </div>
+              <>
+                <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
+                  <Field>
+                    <FieldLabel htmlFor="platform_purchase_price">Compra default</FieldLabel>
+                    <Input id="platform_purchase_price" name="default_purchase_amount" type="number" step="0.01" />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Moneda compra</FieldLabel>
+                    <Select name="default_purchase_currency" defaultValue="USDT">
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectGroup><SelectItem value="USDT">USDT</SelectItem><SelectItem value="BOB">BOB</SelectItem></SelectGroup></SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="platform_purchase_rate">Cambio compra</FieldLabel>
+                    <Input id="platform_purchase_rate" name="default_purchase_exchange_rate" type="number" step="0.000001" />
+                  </Field>
+                </div>
+                <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+                  <Checkbox name="allow_account_reuse_on_cancel" value="1" />
+                  <span>
+                    <span className="font-medium">Permitir mantener la cuenta disponible al dar de baja</span>
+                    <span className="block text-muted-foreground">Permite reutilizar esta cuenta privada en otra venta.</span>
+                  </span>
+                </label>
+              </>
             ) : null}
             <Field>
               <FieldLabel>Datos solicitados al vender</FieldLabel>

@@ -15,11 +15,13 @@ import type {
   CountryOption,
   ProductOption,
   ProviderOption,
+  ReleasedSpotifyAccessOption,
 } from "./sale-form"
 import { SubscriptionsTable, type SubscriptionRow } from "./subscriptions-table"
 
 export function SubscriptionsManager({
   accounts,
+  releasedSpotifyAccesses,
   countries,
   defaultCountryId,
   initialActiveTotal,
@@ -30,6 +32,7 @@ export function SubscriptionsManager({
   providers,
 }: {
   accounts: AccountOption[]
+  releasedSpotifyAccesses: ReleasedSpotifyAccessOption[]
   countries: CountryOption[]
   defaultCountryId?: string
   initialActiveTotal: number
@@ -64,6 +67,7 @@ export function SubscriptionsManager({
           key={`${platform}:${defaultProductSlug ?? ""}`}
           products={products}
           providers={providers}
+          releasedSpotifyAccesses={releasedSpotifyAccesses}
         />
       </CardHeader>
       <CardContent className="min-w-0">

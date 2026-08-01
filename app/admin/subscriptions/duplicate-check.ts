@@ -58,7 +58,7 @@ export function accessStatus(
   endsOn: string,
   today = new Date().toISOString().slice(0, 10)
 ): "active" | "expired" {
-  return endsOn < today ? "expired" : "active"
+  return endsOn <= today ? "expired" : "active"
 }
 
 export function matchingServiceSales(

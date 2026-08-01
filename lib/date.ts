@@ -27,3 +27,18 @@ export function formatDateTime(value: string | null | undefined) {
   const date = parts(value)
   return date ? `${date.day}/${date.month}/${date.year}${date.time ? ` ${date.time}` : ""}` : "-"
 }
+
+export function boliviaDate(value: string) {
+  const values = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      day: "2-digit",
+      month: "2-digit",
+      timeZone: "America/La_Paz",
+      year: "numeric",
+    })
+      .formatToParts(new Date(value))
+      .map((part) => [part.type, part.value])
+  )
+
+  return `${values.year}-${values.month}-${values.day}`
+}
