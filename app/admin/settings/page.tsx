@@ -44,17 +44,18 @@ export default async function SettingsPage() {
             <h1 className="text-2xl font-semibold tracking-tight">Configuración</h1>
           </div>
           <p className="text-muted-foreground">
-            Define qué cuentas se pueden reutilizar y qué plataformas aparecen en Inventario.
+            Define qué cuentas personales se pueden reutilizar y qué plataformas aparecen en cada lista de cuentas.
           </p>
         </div>
-        <Button
-          nativeButton={false}
-          variant="outline"
-          render={<Link href="/admin/accounts" />}
-        >
-          <ArrowLeftIcon data-icon="inline-start" />
-          Volver al inventario
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button nativeButton={false} variant="outline" render={<Link href="/admin/accounts" />}>
+            <ArrowLeftIcon data-icon="inline-start" />
+            Cuentas madre
+          </Button>
+          <Button nativeButton={false} variant="outline" render={<Link href="/admin/personal-accounts" />}>
+            Cuentas personales
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -98,7 +99,7 @@ export default async function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Plataformas visibles en Inventario</CardTitle>
+          <CardTitle>Plataformas visibles en listas de cuentas</CardTitle>
           <CardDescription>
             Las plataformas activas aparecen como pestañas solo cuando tienen cuentas físicas. Esta opción no elimina cuentas ni cambia sus ventas.
           </CardDescription>

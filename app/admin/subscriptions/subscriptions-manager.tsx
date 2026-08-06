@@ -30,6 +30,7 @@ export function SubscriptionsManager({
   platforms,
   products,
   providers,
+  assignment,
 }: {
   accounts: AccountOption[]
   releasedSpotifyAccesses: ReleasedSpotifyAccessOption[]
@@ -41,6 +42,7 @@ export function SubscriptionsManager({
   platforms: { slug: string; name: string }[]
   products: ProductOption[]
   providers: ProviderOption[]
+  assignment?: { accountId: string; productSlug: string }
 }) {
   const [platform, setPlatform] = useState("all")
   const defaultProductSlug =
@@ -63,8 +65,10 @@ export function SubscriptionsManager({
           accounts={accounts}
           countries={countries}
           defaultCountryId={defaultCountryId}
-          defaultProductSlug={defaultProductSlug}
-          key={`${platform}:${defaultProductSlug ?? ""}`}
+          defaultOpen={Boolean(assignment)}
+          defaultProductSlug={assignment?.productSlug ?? defaultProductSlug}
+          defaultServiceAccountId={assignment?.accountId}
+          key={`${platform}:${assignment?.productSlug ?? defaultProductSlug ?? ""}:${assignment?.accountId ?? ""}`}
           products={products}
           providers={providers}
           releasedSpotifyAccesses={releasedSpotifyAccesses}

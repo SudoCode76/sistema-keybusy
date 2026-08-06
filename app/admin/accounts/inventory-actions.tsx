@@ -36,10 +36,8 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { formatDate } from "@/lib/date"
-import {
-  isMotherService,
-  nextRenewalSuggestion,
-} from "@/app/admin/subscriptions/mother-access"
+import Link from "next/link"
+import { nextRenewalSuggestion } from "@/app/admin/subscriptions/mother-access"
 import { CheckIcon, CopyIcon, MoreHorizontalIcon } from "lucide-react"
 import { useState } from "react"
 
@@ -49,6 +47,8 @@ type ServiceOption = {
   id: string
   name: string
   slug: string
+  account_model: "private" | "mother"
+  default_seat_capacity: number | null
 }
 
 type ProviderOption = {
@@ -77,9 +77,10 @@ type InventoryAccount = {
   base_cost_usdt: number | null
   base_cost_bob: number | null
   renewal_due_on: string | null
+  seat_capacity: number | null
   two_factor_url: string | null
   notes: string | null
-  services?: Nested<{ name: string | null; slug: string | null }>
+  services?: Nested<{ name: string | null; slug: string | null; account_model: "private" | "mother" }>
   providers?: Nested<{ name: string | null }>
   email_addresses?: Nested<{
     email: string
@@ -99,7 +100,7 @@ function one<T>(value: Nested<T>) {
   return Array.isArray(value) ? value[0] : value
 }
 
-function parseSecretPayload(payload: string | null | undefined) {
+export function parseSecretPayload(payload: string | null | undefined) {
   const parsed: Record<string, string> = {}
 
   for (const line of payload?.split(/\r?\n/) ?? []) {
@@ -155,12 +156,20 @@ function CopyField({ label, value }: { label: string; value: string | null | und
 
 export function InventoryActions({
   account,
+  assignmentHref,
+  assignmentLabel,
+  assignmentUnavailableReason,
   replacementLabel,
+  returnPath = "/admin/accounts",
   services,
   providers,
 }: {
   account: InventoryAccount
+  assignmentHref?: string
+  assignmentLabel?: string
+  assignmentUnavailableReason?: string
   replacementLabel?: string | null
+  returnPath?: "/admin/accounts" | "/admin/personal-accounts"
   services: ServiceOption[]
   providers: ProviderOption[]
 }) {
@@ -168,8 +177,7 @@ export function InventoryActions({
   const [editOpen, setEditOpen] = useState(false)
   const [renewOpen, setRenewOpen] = useState(false)
   const spotifyPlan = one(account.spotify_family_plans)
-  const serviceSlug = one(account.services)?.slug
-  const isMother = isMotherService(serviceSlug)
+  const isMother = one(account.services)?.account_model === "mother"
   const credentials = one(account.account_credentials)
   const secrets = parseSecretPayload(credentials?.secret_payload)
   const platformPassword = secrets.platform_password ?? secrets.password
@@ -189,6 +197,13 @@ export function InventoryActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-40">
           <DropdownMenuGroup>
+            <DropdownMenuItem
+              disabled={!assignmentHref}
+              render={assignmentHref ? <Link href={assignmentHref} /> : undefined}
+              title={assignmentUnavailableReason}
+            >
+              {assignmentLabel ?? "Asignar a nuevo usuario"}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setViewOpen(true)}>Ver cuenta</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setEditOpen(true)}>Editar</DropdownMenuItem>
             {account.status === "active" ? (
@@ -206,6 +221,7 @@ export function InventoryActions({
           <DropdownMenuSeparator />
           <form action={deleteServiceAccount}>
             <input type="hidden" name="id" value={account.id} />
+            <input type="hidden" name="return_path" value={returnPath} />
             <FormSubmitButton pendingLabel="Eliminando..." variant="ghost" size="sm">
               Eliminar
             </FormSubmitButton>
@@ -239,7 +255,12 @@ export function InventoryActions({
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogTitle className="sr-only">Editar inventario</DialogTitle>
-          <InventoryForm account={account} services={services} providers={providers} />
+          <InventoryForm
+            account={account}
+            returnPath={returnPath}
+            services={services}
+            providers={providers}
+          />
         </DialogContent>
       </Dialog>
 

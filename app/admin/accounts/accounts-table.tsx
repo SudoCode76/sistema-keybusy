@@ -3,14 +3,13 @@
 import { Fragment, useMemo, useState } from "react"
 import Link from "next/link"
 
-import { InventoryActions } from "@/app/admin/accounts/inventory-actions"
-import { isAccountAvailable } from "@/app/admin/accounts/account-availability"
 import {
-  isCodexAvailable,
-  isMotherAccount,
-} from "@/app/admin/accounts/account-availability"
+  InventoryActions,
+  parseSecretPayload,
+} from "@/app/admin/accounts/inventory-actions"
+import { isAccountAvailable } from "@/app/admin/accounts/account-availability"
 import { Badge } from "@/components/ui/badge"
-import { buttonVariants } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   CardContent,
@@ -28,10 +27,9 @@ import { formatDate } from "@/lib/date"
 import { money } from "@/lib/money"
 import {
   boliviaToday,
-  isMotherService,
   renewalOverdue,
 } from "@/app/admin/subscriptions/mother-access"
-import { spotifySeatsAvailable } from "@/app/admin/subscriptions/spotify-seats"
+import { CheckIcon, CopyIcon } from "lucide-react"
 
 type Nested<T> = T | T[] | null | undefined
 
@@ -53,13 +51,19 @@ type Account = {
   base_cost_usdt: number | null
   base_cost_bob: number | null
   renewal_due_on: string | null
+  seat_capacity: number | null
   two_factor_url: string | null
   notes: string | null
   spotifySeatsUsed: number
   services?: Nested<{
     name: string | null
     slug: string | null
-    products?: Array<{ purchase_mode: string | null }>
+    account_model: "private" | "mother"
+    products?: Array<{
+      slug: string
+      purchase_mode: string | null
+      is_default: boolean
+    }>
   }>
   providers?: Nested<{ name: string | null }>
   email_addresses?: Nested<{
@@ -80,8 +84,14 @@ type ServiceOption = {
   id: string
   name: string
   slug: string
+  account_model: "private" | "mother"
+  default_seat_capacity: number | null
   show_in_inventory_tabs?: boolean | null
-  products?: Array<{ purchase_mode: string | null }>
+  products?: Array<{
+    slug: string
+    purchase_mode: string | null
+    is_default: boolean
+  }>
 }
 
 type ProviderOption = {
@@ -120,13 +130,42 @@ function accountLabel(account: Account) {
   return [account.label, account.login_email ?? account.username].filter(Boolean).join(" · ")
 }
 
+function CopyCredential({ label, value }: { label: string; value: string | null | undefined }) {
+  const [copied, setCopied] = useState(false)
+
+  if (!value) return null
+  const text = value
+
+  async function copy() {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1200)
+  }
+
+  return (
+    <button
+      aria-label={`Copiar ${label}`}
+      className="flex max-w-full items-center gap-1 text-left text-xs text-muted-foreground hover:text-foreground"
+      onClick={copy}
+      title={`Copiar ${label}`}
+      type="button"
+    >
+      <span className="truncate">{label}: {text}</span>
+      {copied ? <CheckIcon className="size-3 shrink-0" /> : <CopyIcon className="size-3 shrink-0" />}
+    </button>
+  )
+}
+
 export function AccountsTable({
+  accountModel,
   accounts,
   activeAccountUses,
   spotifyClients,
   services,
   providers,
+  returnPath,
 }: {
+  accountModel: "mother" | "private"
   accounts: Account[]
   activeAccountUses: Array<{
     serviceAccountId: string | null
@@ -135,9 +174,10 @@ export function AccountsTable({
   spotifyClients: SpotifyClient[]
   services: ServiceOption[]
   providers: ProviderOption[]
+  returnPath: "/admin/accounts" | "/admin/personal-accounts"
 }) {
-  const [typeFilter, setTypeFilter] = useState<"mother" | "private" | "codex" | "all">("mother")
   const [platformFilter, setPlatformFilter] = useState("all")
+  const [expandedSpotifyAccounts, setExpandedSpotifyAccounts] = useState<string[]>([])
   const [showInactive, setShowInactive] = useState(false)
   const [onlyAvailable, setOnlyAvailable] = useState(false)
   const today = boliviaToday()
@@ -154,39 +194,20 @@ export function AccountsTable({
     () => new Map(accounts.map((account) => [account.id, accountLabel(account)])),
     [accounts]
   )
-  const motherSlugs = useMemo(() => new Set(["netflix", "spotify", "chatgpt-shared"]), [])
   const filteredAccounts = accounts
     .filter((account) => showInactive || account.status === "active")
-    .filter((account) => {
-      const service = one(account.services)
-      const purchaseModes = service?.products?.map((product) => product.purchase_mode) ?? []
-      const accountIsMother = isMotherAccount(
-        purchaseModes,
-        motherSlugs.has(service?.slug ?? "")
-      )
-
-      if (typeFilter === "codex") return service?.slug === "chatgpt-private"
-      if (typeFilter === "private") return !accountIsMother
-      if (typeFilter === "all") return true
-
-      return accountIsMother
-    })
+    .filter((account) => one(account.services)?.account_model === accountModel)
     .filter((account) => !platformFilter || platformFilter === "all" || one(account.services)?.slug === platformFilter)
     .filter((account) => {
       if (!onlyAvailable) return true
       const uses = activeUses.get(account.id) ?? []
-      const hasCodexSale = uses.some((use) => use.productSlug === "chatgpt_codex")
       const hasPrivateSale = uses.some((use) => use.productSlug !== "chatgpt_codex")
 
-      if (typeFilter === "codex") {
-        return isCodexAvailable(account.status, hasCodexSale)
-      }
-
-      if (one(account.services)?.slug === "chatgpt-private") {
+      if (accountModel === "private") {
         return isAccountAvailable(account.status, hasPrivateSale)
       }
 
-      return isAccountAvailable(account.status, uses.length > 0)
+      return account.status === "active" && (account.seat_capacity ?? 0) > uses.length
     })
   const platformStats = services.map((service) => {
     const serviceAccounts = accounts.filter(
@@ -195,9 +216,9 @@ export function AccountsTable({
     const available = serviceAccounts.filter((account) => {
       const uses = activeUses.get(account.id) ?? []
       const hasPrivateSale = uses.some((use) => use.productSlug !== "chatgpt_codex")
-      return one(account.services)?.slug === "chatgpt-private"
+      return accountModel === "private"
         ? isAccountAvailable(account.status, hasPrivateSale)
-        : isAccountAvailable(account.status, uses.length > 0)
+        : account.status === "active" && (account.seat_capacity ?? 0) > uses.length
     }).length
 
     return {
@@ -207,40 +228,16 @@ export function AccountsTable({
       available,
     }
   })
-  const selectPlatform = (next: string) => {
-    setPlatformFilter(next)
-    if (next === "all") return
-
-    const selectedPlatform = services.find((service) => service.slug === next)
-    const selectedIsMother = isMotherAccount(
-      selectedPlatform?.products?.map((product) => product.purchase_mode) ?? [],
-      motherSlugs.has(next)
-    )
-    setTypeFilter(selectedIsMother ? "mother" : "private")
-  }
-  const selectedTab = platformFilter === "all"
-    ? typeFilter
-    : `platform:${platformFilter}`
-
   return (
     <CardContent>
       <div className="mb-4 flex flex-col gap-3">
         <Tabs
           className="inventory-tabs-scroll w-full min-w-0 overflow-x-auto"
-          value={selectedTab}
-          onValueChange={(value) => {
-            if (value.startsWith("platform:")) {
-              selectPlatform(value.slice("platform:".length))
-              return
-            }
-
-            const next = value as "mother" | "private" | "codex" | "all"
-            setTypeFilter(next)
-            setPlatformFilter("all")
-          }}
+          value={platformFilter}
+          onValueChange={setPlatformFilter}
         >
           <TabsList className="w-max min-w-full justify-start gap-1 px-1 [&_[data-slot=tabs-trigger]]:px-4">
-            <TabsTrigger value="mother">Cuentas madre</TabsTrigger>
+            <TabsTrigger value="all">Todas</TabsTrigger>
             {platformStats
               .filter(
                 (platform) =>
@@ -250,13 +247,11 @@ export function AccountsTable({
               .map((platform) => (
                 <TabsTrigger
                   key={platform.slug}
-                  value={`platform:${platform.slug}`}
+                  value={platform.slug}
                 >
                   {platform.name}
                 </TabsTrigger>
               ))}
-            <TabsTrigger value="codex">Codex</TabsTrigger>
-            <TabsTrigger value="all">Todo</TabsTrigger>
           </TabsList>
         </Tabs>
         <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
@@ -279,7 +274,7 @@ export function AccountsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Ítem comprado</TableHead>
+            <TableHead>Cuenta</TableHead>
             <TableHead>Plataforma</TableHead>
             <TableHead>Proveedor</TableHead>
             <TableHead>Compra</TableHead>
@@ -292,7 +287,6 @@ export function AccountsTable({
         <TableBody>
           {filteredAccounts.map((account) => {
             const serviceSlug = one(account.services)?.slug
-            const codexView = typeFilter === "codex"
             const uses = activeUses.get(account.id) ?? []
             const hasCodexSale = uses.some(
               (use) => use.productSlug === "chatgpt_codex"
@@ -300,56 +294,73 @@ export function AccountsTable({
             const hasPrivateSale = uses.some(
               (use) => use.productSlug !== "chatgpt_codex"
             )
-            const spotifySeatsTotal = one(
-              account.spotify_family_plans
-            )?.seats_total ?? null
-            const spotifyAvailable = spotifySeatsAvailable(
-              spotifySeatsTotal,
-              account.spotifySeatsUsed
-            )
-            const isLinked = codexView
-              ? hasCodexSale
-              : serviceSlug === "chatgpt-private"
-                ? hasPrivateSale
-                : uses.length > 0
-            const isAvailable = codexView
-              ? isCodexAvailable(account.status, hasCodexSale)
-              : isAccountAvailable(account.status, isLinked)
-            const isMother = isMotherService(serviceSlug)
+            const seatsTotal = account.seat_capacity
+            const seatsAvailable = seatsTotal === null
+              ? null
+              : Math.max(0, seatsTotal - account.spotifySeatsUsed)
+            const isMother = accountModel === "mother"
+            const isAvailable = isMother
+              ? account.status === "active" && (seatsAvailable ?? 0) > 0
+              : isAccountAvailable(account.status, hasPrivateSale)
             const overdue = renewalOverdue(
               serviceSlug,
               account.renewal_due_on,
-              today
+              today,
+              one(account.services)?.account_model
             )
+            const assignmentProduct = one(account.services)?.products?.find(
+              (product) => product.is_default && product.slug !== "chatgpt_codex"
+            ) ?? one(account.services)?.products?.find(
+              (product) => product.slug !== "chatgpt_codex"
+            )
+            const canAssign = Boolean(
+              assignmentProduct &&
+              account.status === "active" &&
+              !overdue &&
+              isAvailable
+            )
+            const assignmentUnavailableReason = !assignmentProduct
+              ? "Esta cuenta no tiene un ítem vendible configurado"
+              : overdue
+                ? "Primero registra la renovación de la cuenta"
+                : isMother && (seatsAvailable ?? 0) === 0
+                  ? "La cuenta madre no tiene cupos disponibles"
+                  : !isMother && !isAvailable
+                      ? "Esta cuenta ya tiene un cliente activo"
+                      : "La cuenta no está activa"
+            const secrets = parseSecretPayload(one(account.account_credentials)?.secret_payload)
+            const platformPassword = secrets.platform_password ?? secrets.password
+            const accountMembers = isMother
+              ? spotifyClients.filter((client) => client.serviceAccountId === account.id)
+              : []
 
             return (
               <Fragment key={account.id}>
               <TableRow>
                 <TableCell>
                   <div className="flex flex-col items-start gap-1">
-                    <span>{codexView ? `Codex · ${account.label}` : account.label}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {account.login_email ?? account.username}
-                    </span>
-                    {!codexView && serviceSlug === "spotify" ? (
-                      spotifyAvailable === null ? (
+                    <span>{account.label}</span>
+                    <CopyCredential label="Correo" value={account.login_email ?? account.username} />
+                    <CopyCredential label="Contraseña" value={platformPassword} />
+                    {isMother ? (
+                      seatsAvailable === null ? (
                         <Badge variant="outline">Cupos sin configurar</Badge>
                       ) : (
                         <Badge
                           variant={
-                            spotifyAvailable === 0
+                            seatsAvailable === 0
                               ? "destructive"
                               : "secondary"
                           }
                         >
-                          {spotifyAvailable} de {spotifySeatsTotal} cupos
+                          {seatsAvailable} de {seatsTotal} cupos
                           disponibles
                         </Badge>
                       )
                     ) : null}
                   </div>
                 </TableCell>
-                <TableCell>{codexView ? "Codex" : one(account.services)?.name}</TableCell>
+                <TableCell>{one(account.services)?.name}</TableCell>
                 <TableCell>{one(account.providers)?.name}</TableCell>
                 <TableCell>{money(account.base_cost_usdt, "USDT")} / {money(account.base_cost_bob, "BOB")}</TableCell>
                 <TableCell>
@@ -373,33 +384,56 @@ export function AccountsTable({
                   <div className="flex flex-col gap-1">
                     <Badge variant="secondary">{account.status}</Badge>
                     {isAvailable ? (
-                      <Badge variant="secondary">
-                        {codexView ? "Codex disponible" : "Disponible sin cliente"}
-                      </Badge>
-                    ) : isLinked ? (
-                      <Badge variant="destructive">
-                        {codexView ? "Codex en uso" : "En uso"}
+                      <Badge variant="secondary">{isMother ? "Con cupos disponibles" : "Disponible sin cliente"}</Badge>
+                    ) : (!isMother && hasPrivateSale) ? (
+                      <Badge variant="destructive">En uso</Badge>
+                    ) : null}
+                    {!isMother && serviceSlug === "chatgpt-private" ? (
+                      <Badge variant={hasCodexSale ? "destructive" : "outline"}>
+                        {hasCodexSale ? "Codex en uso" : "Codex disponible"}
                       </Badge>
                     ) : null}
                   </div>
                 </TableCell>
                 <TableCell className="text-right">
-                  <InventoryActions
-                    account={account}
-                    replacementLabel={
-                      account.replacement_account_id
-                        ? replacementLabels.get(account.replacement_account_id) ?? "Cuenta reemplazada"
-                        : null
-                    }
-                    services={services}
-                    providers={providers}
-                  />
+                  <div className="flex justify-end gap-2">
+                    {isMother ? (
+                      <Button
+                        onClick={() => setExpandedSpotifyAccounts((current) =>
+                          current.includes(account.id)
+                            ? current.filter((id) => id !== account.id)
+                            : [...current, account.id]
+                        )}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {expandedSpotifyAccounts.includes(account.id) ? "Ocultar miembros" : "Ver miembros"}
+                      </Button>
+                    ) : null}
+                    <InventoryActions
+                      account={account}
+                      assignmentHref={
+                        canAssign && assignmentProduct
+                          ? `/admin/subscriptions?new=1&product=${assignmentProduct.slug}&account=${account.id}`
+                          : undefined
+                      }
+                      assignmentLabel={serviceSlug === "spotify" ? "Asignar miembro" : "Asignar cliente"}
+                      assignmentUnavailableReason={assignmentUnavailableReason}
+                      replacementLabel={
+                        account.replacement_account_id
+                          ? replacementLabels.get(account.replacement_account_id) ?? "Cuenta reemplazada"
+                          : null
+                      }
+                      returnPath={returnPath}
+                      services={services}
+                      providers={providers}
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
-              {platformFilter === "spotify"
-                ? spotifyClients
-                    .filter((client) => client.serviceAccountId === account.id)
-                    .map((client) => (
+              {isMother && expandedSpotifyAccounts.includes(account.id)
+                ? accountMembers.length
+                  ? accountMembers.map((client) => (
                       <TableRow className="bg-muted/20" key={client.id}>
                         <TableCell>
                           <div className="border-l-2 border-primary/30 pl-4">
@@ -434,6 +468,13 @@ export function AccountsTable({
                         </TableCell>
                       </TableRow>
                     ))
+                  : (
+                    <TableRow className="bg-muted/20">
+                      <TableCell className="pl-8 text-sm text-muted-foreground" colSpan={8}>
+                        Esta cuenta no tiene clientes activos.
+                      </TableCell>
+                    </TableRow>
+                  )
                 : null}
               </Fragment>
             )

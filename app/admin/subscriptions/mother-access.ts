@@ -1,5 +1,3 @@
-const motherServices = new Set(["spotify", "netflix"])
-
 export function boliviaToday(value = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
@@ -13,16 +11,20 @@ export function boliviaToday(value = new Date()) {
   return `${part("year")}-${part("month")}-${part("day")}`
 }
 
-export function isMotherService(serviceSlug: string | null | undefined) {
-  return motherServices.has(serviceSlug ?? "")
+export function isMotherService(
+  _serviceSlug: string | null | undefined,
+  accountModel?: string | null
+) {
+  return accountModel === "mother"
 }
 
 export function renewalOverdue(
-  serviceSlug: string | null | undefined,
+  _serviceSlug: string | null | undefined,
   renewalDueOn: string | null | undefined,
-  today = boliviaToday()
+  today = boliviaToday(),
+  accountModel?: string | null
 ) {
-  return isMotherService(serviceSlug) && Boolean(renewalDueOn && renewalDueOn <= today)
+  return isMotherService(_serviceSlug, accountModel) && Boolean(renewalDueOn && renewalDueOn <= today)
 }
 
 export function motherAccessIssueOn({
@@ -32,6 +34,7 @@ export function motherAccessIssueOn({
   endsOn,
   renewalDueOn,
   serviceSlug,
+  accountModel,
   status,
   today = boliviaToday(),
 }: {
@@ -41,18 +44,19 @@ export function motherAccessIssueOn({
   endsOn: string
   renewalDueOn: string | null
   serviceSlug: string
+  accountModel?: string | null
   status: string
   today?: string
 }) {
   if (
-    !isMotherService(serviceSlug) ||
+    !isMotherService(serviceSlug, accountModel) ||
     ["canceled", "inactive"].includes(status) ||
     endsOn <= today
   ) {
     return null
   }
 
-  const overdueOn = renewalOverdue(serviceSlug, renewalDueOn, today)
+  const overdueOn = renewalOverdue(serviceSlug, renewalDueOn, today, accountModel)
     ? renewalDueOn
     : null
   const issueOn =

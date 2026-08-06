@@ -37,7 +37,7 @@ export async function getSubscriptionsPage(
   let productIds: string[] | null = null
   let subscriptionQuery = supabase
     .from("subscriptions")
-    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, renewal_message_sent_at, access_restored_on, created_at, notes, customers(id, country_id, display_name, phone, phone_e164, phone_normalized, telegram_username), products(id, slug, name, services(slug, name)), service_accounts(label, login_email, username, provider_id, email_address_id, base_cost_amount, base_cost_currency, renewal_due_on, access_issue_on, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields)", { count: "exact" })
+    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, renewal_message_sent_at, access_restored_on, created_at, notes, customers(id, country_id, display_name, phone, phone_e164, phone_normalized, telegram_username), products(id, slug, name, services(slug, name, account_model)), service_accounts(label, login_email, username, provider_id, email_address_id, base_cost_amount, base_cost_currency, renewal_due_on, access_issue_on, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields)", { count: "exact" })
 
   subscriptionQuery = showCanceled
     ? subscriptionQuery.in("status", ["canceled", "inactive"])
@@ -217,6 +217,7 @@ export async function getSubscriptionsPage(
       endsOn: subscription.ends_on,
       renewalDueOn: account?.renewal_due_on ?? null,
       serviceSlug: service?.slug ?? "",
+      accountModel: service?.account_model ?? null,
       status: subscription.status,
       today,
     })

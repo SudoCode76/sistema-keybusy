@@ -18,7 +18,6 @@ import {
   registerMissingPurchaseCost,
   replaceSubscriptionAccount,
   resolveMotherAccessIssue,
-  renewSubscription,
   setRenewalMessageSent,
 } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -28,7 +27,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogForm,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -68,6 +66,7 @@ import {
   type ProductOption,
   type ProviderOption,
 } from "./sale-form"
+import { RenewSubscriptionForm } from "./renew-subscription-form"
 
 type SubscriptionRow = {
   id: string
@@ -841,75 +840,10 @@ export function SubscriptionActions({
               Renueva desde {formatDate(subscription.endsOn)}
             </DialogDescription>
           </DialogHeader>
-          <DialogForm action={renewSubscription}>
-            <FieldGroup>
-              <input name="id" type="hidden" value={subscription.id} />
-              <div className="grid gap-3 md:grid-cols-3">
-                <Field>
-                  <FieldLabel htmlFor={`renew_months_${subscription.id}`}>
-                    Meses
-                  </FieldLabel>
-                  <Input
-                    defaultValue={subscription.durationMonths}
-                    id={`renew_months_${subscription.id}`}
-                    min="1"
-                    name="duration_months"
-                    type="number"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`renew_amount_${subscription.id}`}>
-                    Precio mensual
-                  </FieldLabel>
-                  <Input
-                    defaultValue={subscription.currentPriceAmount}
-                    id={`renew_amount_${subscription.id}`}
-                    name="amount"
-                    step="0.01"
-                    type="number"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel>Moneda</FieldLabel>
-                  <Select
-                    name="currency"
-                    defaultValue={subscription.currentPriceCurrency}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="BOB">BOB</SelectItem>
-                        <SelectItem value="USDT">USDT</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-              <Field>
-                <FieldLabel htmlFor={`renew_rate_${subscription.id}`}>
-                  Tipo de cambio
-                </FieldLabel>
-                <Input
-                  defaultValue={subscription.currentExchangeRate ?? ""}
-                  id={`renew_rate_${subscription.id}`}
-                  name="exchange_rate"
-                  step="0.000001"
-                  type="number"
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor={`renew_notes_${subscription.id}`}>
-                  Notas
-                </FieldLabel>
-                <Textarea id={`renew_notes_${subscription.id}`} name="notes" />
-              </Field>
-              <FormSubmitButton pendingLabel="Renovando...">
-                Guardar renovación
-              </FormSubmitButton>
-            </FieldGroup>
-          </DialogForm>
+          <RenewSubscriptionForm
+            onSaved={() => setRenewOpen(false)}
+            subscription={subscription}
+          />
         </DialogContent>
       </Dialog>
     </>

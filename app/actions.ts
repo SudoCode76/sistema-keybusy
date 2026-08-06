@@ -90,6 +90,17 @@ function requireValue(value: FormDataEntryValue | null, name: string) {
   return text
 }
 
+function accountReturnPath(formData: FormData) {
+  return formText(formData.get("return_path")) === "/admin/personal-accounts"
+    ? "/admin/personal-accounts"
+    : "/admin/accounts"
+}
+
+function revalidateAccountPages() {
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/personal-accounts")
+}
+
 function slugify(value: string) {
   return value
     .normalize("NFD")
@@ -103,11 +114,6 @@ function slugify(value: string) {
 function optionalId(value: FormDataEntryValue | null) {
   const text = formText(value)
   return text === "none" ? null : text
-}
-
-function purchaseMode(value: FormDataEntryValue | null) {
-  const text = formText(value)
-  return text === "individual" || text === "linked" ? text : "inventory"
 }
 
 function accessFields(formData: FormData) {
@@ -137,26 +143,20 @@ async function insertOrThrow<T>(
 
 async function motherAccountRenewalError(
   supabase: ServerClient,
-  serviceAccountId: string | null,
-  productSlug: string
+  serviceAccountId: string | null
 ) {
-  if (
-    !serviceAccountId ||
-    !["spotify_family_member", "netflix_profile"].includes(productSlug)
-  ) {
-    return null
-  }
+  if (!serviceAccountId) return null
 
   const { data, error } = await supabase
     .from("service_accounts")
-    .select("renewal_due_on")
+    .select("renewal_due_on, services(slug, account_model)")
     .eq("id", serviceAccountId)
     .single()
 
   if (error || !data) return error?.message ?? "Cuenta madre no encontrada"
-  const serviceSlug =
-    productSlug === "spotify_family_member" ? "spotify" : "netflix"
-  return renewalOverdue(serviceSlug, data.renewal_due_on)
+  const service = Array.isArray(data.services) ? data.services[0] : data.services
+  if (!service || service.account_model !== "mother") return null
+  return renewalOverdue(service.slug, data.renewal_due_on, undefined, service.account_model)
     ? "La cuenta madre tiene el pago vencido. Registra su renovación antes de usarla."
     : null
 }
@@ -679,8 +679,10 @@ export async function createPlatformWithProduct(formData: FormData) {
   const { supabase } = await requireAdmin()
   const platformName = requireValue(formData.get("platform_name"), "Plataforma")
   const productName = requireValue(formData.get("product_name"), "Item")
-  const mode =
-    formData.get("purchase_mode") === "individual" ? "individual" : "inventory"
+  const accountModel = formText(formData.get("account_model"))
+  if (accountModel !== "mother" && accountModel !== "private") {
+    throw new Error("Selecciona cómo se venderá la plataforma")
+  }
   const platformSlug = slugify(
     formText(formData.get("platform_slug")) ?? platformName
   ).replaceAll("_", "-")
@@ -694,7 +696,11 @@ export async function createPlatformWithProduct(formData: FormData) {
     p_product_name: productName,
     p_product_slug: productSlug,
     p_product_type: formText(formData.get("product_type")) ?? "profile",
-    p_purchase_mode: mode,
+    p_account_model: accountModel,
+    p_default_seat_capacity:
+      accountModel === "mother"
+        ? formNumber(formData.get("default_seat_capacity"), 1)
+        : null,
     p_access_fields: accessFields(formData),
     p_duration_months: formNumber(formData.get("default_duration_months"), 1),
     p_sale_amount: formNumber(formData.get("default_price_amount")),
@@ -727,19 +733,26 @@ export async function createPlatformWithProduct(formData: FormData) {
 
   revalidatePath("/admin/services")
   revalidatePath("/admin/subscriptions")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   redirect("/admin/services?saved=1")
 }
 
 export async function createProduct(formData: FormData) {
   const { supabase } = await requireAdmin()
   const name = requireValue(formData.get("name"), "Producto")
+  const serviceId = requireValue(formData.get("service_id"), "Servicio")
+  const { data: service, error: serviceError } = await supabase
+    .from("services")
+    .select("account_model")
+    .eq("id", serviceId)
+    .single()
+  if (serviceError || !service) throw serviceError ?? new Error("Plataforma no encontrada")
 
   await insertOrThrow(
     supabase
       .from("products")
       .insert({
-        service_id: requireValue(formData.get("service_id"), "Servicio"),
+        service_id: serviceId,
         name,
         slug: formText(formData.get("slug")) ?? slugify(name),
         product_type: formText(formData.get("product_type")) ?? "profile",
@@ -753,7 +766,7 @@ export async function createProduct(formData: FormData) {
         ),
         default_exchange_rate:
           formNumber(formData.get("default_exchange_rate")) || null,
-        purchase_mode: purchaseMode(formData.get("purchase_mode")),
+        purchase_mode: service.account_model === "mother" ? "inventory" : "individual",
         access_fields: accessFields(formData),
         default_purchase_amount: formNumber(
           formData.get("default_purchase_amount")
@@ -776,12 +789,12 @@ export async function createProduct(formData: FormData) {
 
 export async function updateProductPrice(formData: FormData) {
   const { supabase } = await requireAdmin()
+  const id = requireValue(formData.get("id"), "Producto")
 
   await insertOrThrow(
     supabase
       .from("products")
       .update({
-        service_id: requireValue(formData.get("service_id"), "Servicio"),
         name: requireValue(formData.get("name"), "Producto"),
         slug:
           formText(formData.get("slug")) ??
@@ -797,7 +810,6 @@ export async function updateProductPrice(formData: FormData) {
         ),
         default_exchange_rate:
           formNumber(formData.get("default_exchange_rate")) || null,
-        purchase_mode: purchaseMode(formData.get("purchase_mode")),
         access_fields: accessFields(formData),
         default_purchase_amount: formNumber(
           formData.get("default_purchase_amount")
@@ -810,7 +822,7 @@ export async function updateProductPrice(formData: FormData) {
         allow_account_reuse_on_cancel:
           formData.get("allow_account_reuse_on_cancel") === "1",
       })
-      .eq("id", requireValue(formData.get("id"), "Producto"))
+      .eq("id", id)
       .select("id")
       .single()
   )
@@ -892,7 +904,7 @@ export async function setProductAccountReuse(formData: FormData) {
 
   revalidatePath("/admin/services")
   revalidatePath("/admin/subscriptions")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/settings")
 }
 
@@ -911,7 +923,7 @@ export async function setServiceInventoryTabVisibility(formData: FormData) {
   )
 
   revalidatePath("/admin/settings")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/services")
   revalidatePath("/admin/subscriptions")
 }
@@ -960,7 +972,7 @@ export async function createManagedEmail(
 
   revalidatePath("/admin/emails")
   revalidatePath("/admin/subscriptions")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   return { message: "Correo guardado." }
 }
 
@@ -1050,7 +1062,7 @@ export async function updateManagedEmail(
 
   revalidatePath("/admin/emails")
   revalidatePath("/admin/subscriptions")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   return { message: "Correo actualizado." }
 }
 
@@ -1083,13 +1095,13 @@ export async function createServiceAccount(formData: FormData) {
   const serviceId = requireValue(formData.get("service_id"), "Servicio")
   const { data: service, error: serviceError } = await supabase
     .from("services")
-    .select("name, slug")
+    .select("name, slug, account_model, default_seat_capacity")
     .eq("id", serviceId)
     .single()
   if (serviceError || !service) {
     throw serviceError ?? new Error("Servicio no encontrado")
   }
-  const renewalDueOn = ["spotify", "netflix"].includes(service.slug)
+  const renewalDueOn = service.account_model === "mother"
     ? requireValue(formData.get("renewal_due_on"), "Próximo pago")
     : null
   const accountResult = await supabase
@@ -1106,6 +1118,13 @@ export async function createServiceAccount(formData: FormData) {
       base_cost_bob: moneyValues.bob,
       base_cost_usdt: moneyValues.usdt,
       renewal_due_on: renewalDueOn,
+      seat_capacity:
+        service.account_model === "mother"
+          ? formNumber(
+              formData.get("seat_capacity"),
+              service.default_seat_capacity ?? 1
+            )
+          : null,
       two_factor_url: formText(formData.get("two_factor_url")),
       notes: formText(formData.get("notes")),
     })
@@ -1159,7 +1178,7 @@ export async function createServiceAccount(formData: FormData) {
         service_account_id: account.id,
         invite_url: inviteUrl,
         address,
-        seats_total: formNumber(formData.get("seats_total"), 6),
+        seats_total: formNumber(formData.get("seat_capacity"), 6),
       })
     )
   }
@@ -1173,11 +1192,11 @@ export async function createServiceAccount(formData: FormData) {
     })
   }
 
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/emails")
   revalidatePath("/admin/costs")
   revalidatePath("/admin")
-  redirect("/admin/accounts?saved=1")
+  redirect(`${accountReturnPath(formData)}?saved=1`)
 }
 
 export async function updateServiceAccount(formData: FormData) {
@@ -1207,13 +1226,13 @@ export async function updateServiceAccount(formData: FormData) {
   const serviceId = requireValue(formData.get("service_id"), "Servicio")
   const { data: service, error: serviceError } = await supabase
     .from("services")
-    .select("name, slug")
+    .select("name, slug, account_model, default_seat_capacity")
     .eq("id", serviceId)
     .single()
   if (serviceError || !service) {
     throw serviceError ?? new Error("Servicio no encontrado")
   }
-  const renewalDueOn = ["spotify", "netflix"].includes(service.slug)
+  const renewalDueOn = service.account_model === "mother"
     ? requireValue(formData.get("renewal_due_on"), "Próximo pago")
     : null
 
@@ -1233,6 +1252,13 @@ export async function updateServiceAccount(formData: FormData) {
         base_cost_bob: moneyValues.bob,
         base_cost_usdt: moneyValues.usdt,
         renewal_due_on: renewalDueOn,
+        seat_capacity:
+          service.account_model === "mother"
+            ? formNumber(
+                formData.get("seat_capacity"),
+                service.default_seat_capacity ?? 1
+              )
+            : null,
         two_factor_url: formText(formData.get("two_factor_url")),
         notes: formText(formData.get("notes")),
       })
@@ -1284,7 +1310,7 @@ export async function updateServiceAccount(formData: FormData) {
             service_account_id: id,
             invite_url: inviteUrl,
             address,
-            seats_total: formNumber(formData.get("seats_total"), 6),
+            seats_total: formNumber(formData.get("seat_capacity"), 6),
           },
           { onConflict: "service_account_id" }
         )
@@ -1300,10 +1326,10 @@ export async function updateServiceAccount(formData: FormData) {
     platformPassword,
   })
 
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/emails")
   revalidatePath("/admin")
-  redirect("/admin/accounts?saved=1")
+  redirect(`${accountReturnPath(formData)}?saved=1`)
 }
 
 export async function deleteServiceAccount(formData: FormData) {
@@ -1318,11 +1344,11 @@ export async function deleteServiceAccount(formData: FormData) {
       .single()
   )
 
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
   revalidatePath("/admin")
-  redirect("/admin/accounts?saved=1")
+  redirect(`${accountReturnPath(formData)}?saved=1`)
 }
 
 export async function markAccountDead(formData: FormData) {
@@ -1339,7 +1365,7 @@ export async function markAccountDead(formData: FormData) {
       .eq("id", requireValue(formData.get("id"), "Cuenta"))
   )
 
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/emails")
 }
 
@@ -1555,7 +1581,7 @@ export async function replaceSubscriptionAccount(
   )
 
   revalidatePath("/admin")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/costs")
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
@@ -1724,8 +1750,7 @@ export async function createSale(
   }
   const renewalError = await motherAccountRenewalError(
     supabase,
-    saleAccountId,
-    productSlug
+    saleAccountId
   )
   if (renewalError) return { error: renewalError }
 
@@ -2118,7 +2143,7 @@ export async function createSale(
   }
 
   revalidatePath("/admin")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
   revalidatePath("/admin/costs")
@@ -2145,7 +2170,7 @@ export async function deleteSubscription(formData: FormData) {
   await insertOrThrow(supabase.from("subscriptions").delete().eq("id", id))
 
   revalidatePath("/admin")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/payments")
   revalidatePath("/admin/costs")
@@ -2201,8 +2226,7 @@ export async function updateSubscription(
   if (accountId !== currentSale.service_account_id) {
     const renewalError = await motherAccountRenewalError(
       supabase,
-      accountId,
-      productSlug
+      accountId
     )
     if (renewalError) return { error: renewalError }
   }
@@ -2331,7 +2355,7 @@ export async function updateSubscription(
 
   revalidatePath("/admin")
   revalidatePath("/admin/subscriptions")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/payments")
   revalidatePath("/admin/costs")
   revalidatePath("/admin/emails")
@@ -2441,7 +2465,7 @@ export async function cancelSubscription(formData: FormData) {
   )
 
   revalidatePath("/admin")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
   revalidatePath("/portal")
@@ -2485,7 +2509,7 @@ export async function reactivateSubscription(formData: FormData) {
   if (error) throw new Error(error.message)
 
   revalidatePath("/admin")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
   revalidatePath("/portal")
@@ -2641,7 +2665,7 @@ export async function createCost(formData: FormData) {
   )
 
   revalidatePath("/admin/costs")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin")
 }
 
@@ -2686,7 +2710,7 @@ export async function renewMotherAccount(formData: FormData) {
   if (error) throw error
 
   revalidatePath("/admin")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/costs")
   revalidatePath("/admin/subscriptions")
 }
@@ -2699,7 +2723,7 @@ export async function resolveMotherAccessIssue(formData: FormData) {
 
   if (error) throw error
 
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/subscriptions")
 }
 
@@ -2744,7 +2768,7 @@ export async function registerMissingPurchaseCost(
   if (error) return { error: error.message }
 
   revalidatePath("/admin")
-  revalidatePath("/admin/accounts")
+  revalidateAccountPages()
   revalidatePath("/admin/costs")
   revalidatePath("/admin/subscriptions")
 

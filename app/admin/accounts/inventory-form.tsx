@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  isMotherService,
   nextRenewalSuggestion,
 } from "@/app/admin/subscriptions/mother-access"
 
@@ -39,6 +38,8 @@ type ServiceOption = {
   id: string
   name: string
   slug: string
+  account_model: "private" | "mother"
+  default_seat_capacity: number | null
 }
 
 type ProviderOption = {
@@ -48,6 +49,8 @@ type ProviderOption = {
 }
 
 type InventoryFormProps = {
+  accountModel?: "mother" | "private"
+  returnPath?: "/admin/accounts" | "/admin/personal-accounts"
   services: ServiceOption[]
   providers: ProviderOption[]
   account?: InventoryAccount
@@ -69,6 +72,7 @@ type InventoryAccount = {
   base_cost_amount: number | null
   base_cost_currency: string | null
   base_cost_exchange_rate: number | null
+  seat_capacity: number | null
   renewal_due_on: string | null
   two_factor_url: string | null
   notes: string | null
@@ -111,13 +115,19 @@ function SubmitButton({ label }: { label: string }) {
 }
 
 export function InventoryForm({
+  accountModel,
+  returnPath = "/admin/accounts",
   services,
   providers,
   account,
 }: InventoryFormProps) {
+  const selectableServices = useMemo(
+    () => accountModel ? services.filter((service) => service.account_model === accountModel) : services,
+    [accountModel, services]
+  )
   const firstService =
-    services.find((service) => service.id === account?.service_id) ??
-    services[0]
+    selectableServices.find((service) => service.id === account?.service_id) ??
+    selectableServices[0]
   const initialProvider = providers.find(
     (provider) => provider.id === account?.provider_id
   )
@@ -139,6 +149,9 @@ export function InventoryForm({
       ? String(account.base_cost_exchange_rate)
       : ""
   )
+  const [seatCapacity, setSeatCapacity] = useState(
+    String(account?.seat_capacity ?? firstService?.default_seat_capacity ?? 1)
+  )
   const [isFetchingRate, setIsFetchingRate] = useState(false)
   const [rateError, setRateError] = useState("")
   const [loginEmail, setLoginEmail] = useState(
@@ -148,11 +161,11 @@ export function InventoryForm({
     managedAddress?.email_password ?? ""
   )
   const selectedService = useMemo(
-    () => services.find((service) => service.id === serviceId),
-    [services, serviceId]
+    () => selectableServices.find((service) => service.id === serviceId),
+    [selectableServices, serviceId]
   )
   const isSpotify = selectedService?.slug === "spotify"
-  const isMother = isMotherService(selectedService?.slug)
+  const isMother = selectedService?.account_model === "mother"
   const matchingProviders = useMemo(
     () =>
       providers.filter(
@@ -183,12 +196,18 @@ export function InventoryForm({
     <Card>
       <CardHeader>
         <CardTitle>
-          {account ? "Editar inventario" : "Nuevo ítem comprado"}
+          {account
+            ? "Editar cuenta comprada"
+            : accountModel === "mother"
+              ? "Registrar cuenta madre"
+              : "Registrar cuenta personal"}
         </CardTitle>
         <CardDescription>
           {account
             ? account.label
-            : "Cuenta completa, plan familiar o perfil comprado."}
+            : accountModel === "mother"
+              ? "Registra la cuenta compartida, su costo, renovación y cupos disponibles."
+              : "Registra la cuenta comprada, sus credenciales y su disponibilidad para un cliente."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -197,12 +216,13 @@ export function InventoryForm({
             {account ? (
               <input name="id" type="hidden" value={account.id} />
             ) : null}
+            <input name="return_path" type="hidden" value={returnPath} />
             <Field>
               <FieldLabel>Plataforma</FieldLabel>
               <input name="service_id" type="hidden" value={serviceId} />
               <Select
                 onValueChange={(nextValue) => {
-                  const service = services.find(
+                  const service = selectableServices.find(
                     (item) => serviceLabel(item) === nextValue
                   )
 
@@ -211,6 +231,7 @@ export function InventoryForm({
                     setSelectedServiceLabel(serviceLabel(service))
                     setProviderId("none")
                     setSelectedProviderLabel("Sin proveedor")
+                    setSeatCapacity(String(service.default_seat_capacity ?? 1))
                   }
                 }}
                 required
@@ -221,7 +242,7 @@ export function InventoryForm({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    {services.map((service) => (
+                    {selectableServices.map((service) => (
                       <SelectItem
                         key={service.id}
                         value={serviceLabel(service)}
@@ -289,7 +310,7 @@ export function InventoryForm({
             <div className="grid gap-3 md:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="base_cost_amount">
-                  Precio de compra
+                  Costo de compra de esta cuenta
                 </FieldLabel>
                 <Input
                   defaultValue={account?.base_cost_amount ?? ""}
@@ -298,6 +319,7 @@ export function InventoryForm({
                   type="number"
                   step="0.01"
                 />
+                <p className="text-sm text-muted-foreground">Aquí registras lo que pagaste por la cuenta madre o privada.</p>
               </Field>
               <Field>
                 <FieldLabel>Moneda</FieldLabel>
@@ -372,6 +394,20 @@ export function InventoryForm({
                 />
               </Field>
             ) : null}
+            {isMother ? (
+              <Field>
+                <FieldLabel htmlFor="seat_capacity">Cupos</FieldLabel>
+                <Input
+                  id="seat_capacity"
+                  min="1"
+                  name="seat_capacity"
+                  onChange={(event) => setSeatCapacity(event.target.value)}
+                  required
+                  type="number"
+                  value={seatCapacity}
+                />
+              </Field>
+            ) : null}
             {isSpotify ? (
               <div className="grid gap-3 md:grid-cols-2">
                 <Field>
@@ -390,15 +426,6 @@ export function InventoryForm({
                     defaultValue={spotifyPlan?.address ?? ""}
                     id="address"
                     name="address"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="seats_total">Cupos</FieldLabel>
-                  <Input
-                    defaultValue={spotifyPlan?.seats_total ?? 6}
-                    id="seats_total"
-                    name="seats_total"
-                    type="number"
                   />
                 </Field>
               </div>

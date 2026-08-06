@@ -15,11 +15,29 @@ import {
 
 import { SaleForm, type SaleFormProps } from "./sale-form"
 
-export function SaleDialog(props: SaleFormProps) {
-  const [open, setOpen] = useState(false)
+export function SaleDialog({
+  defaultOpen = false,
+  ...props
+}: SaleFormProps & { defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
+
+  function clearAssignmentUrl() {
+    if (!defaultOpen) return
+
+    const url = new URL(window.location.href)
+    url.searchParams.delete("new")
+    url.searchParams.delete("product")
+    url.searchParams.delete("account")
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`)
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen)
+    if (!nextOpen) clearAssignmentUrl()
+  }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger className={buttonVariants()}>
         <PlusIcon data-icon="inline-start" />
         Nueva venta
@@ -34,7 +52,13 @@ export function SaleDialog(props: SaleFormProps) {
             Empieza por teléfono y guarda solo los datos que pide cada ítem.
           </DialogDescription>
         </DialogHeader>
-        <SaleForm {...props} onSaved={() => setOpen(false)} />
+        <SaleForm
+          {...props}
+          onSaved={() => {
+            setOpen(false)
+            clearAssignmentUrl()
+          }}
+        />
       </DialogContent>
     </Dialog>
   )

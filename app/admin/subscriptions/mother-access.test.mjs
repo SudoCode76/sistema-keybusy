@@ -13,14 +13,15 @@ const activeSale = {
   createdAt: "2026-06-01T12:00:00Z",
   endsOn: "2026-08-31",
   renewalDueOn: "2026-07-15",
+  accountModel: "mother",
   serviceSlug: "spotify",
   status: "active",
   today: "2026-07-18",
 }
 
 test("calcula y resuelve incidencias de cuentas madre", () => {
-  assert.equal(renewalOverdue("spotify", "2026-07-18", "2026-07-18"), true)
-  assert.equal(renewalOverdue("netflix", "2026-07-17", "2026-07-18"), true)
+  assert.equal(renewalOverdue("spotify", "2026-07-18", "2026-07-18", "mother"), true)
+  assert.equal(renewalOverdue("netflix", "2026-07-17", "2026-07-18", "mother"), true)
   assert.equal(motherAccessIssueOn(activeSale), "2026-07-15")
   assert.equal(
     motherAccessIssueOn({ ...activeSale, renewalDueOn: "2026-07-18" }),

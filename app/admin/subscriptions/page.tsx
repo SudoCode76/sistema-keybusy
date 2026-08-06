@@ -9,7 +9,12 @@ function one<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value
 }
 
-export default async function SubscriptionsPage() {
+export default async function SubscriptionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ account?: string; new?: string; product?: string }>
+}) {
+  const params = await searchParams
   const { supabase } = await requireAdmin()
   const today = boliviaToday()
   const [
@@ -25,14 +30,14 @@ export default async function SubscriptionsPage() {
     supabase
       .from("products")
       .select(
-        "id, slug, name, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, allow_account_reuse_on_cancel, is_default, services(id, slug, name)"
+        "id, slug, name, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, allow_account_reuse_on_cancel, is_default, services(id, slug, name, account_model, default_seat_capacity)"
       )
       .eq("status", "active")
       .order("name"),
     supabase
       .from("service_accounts")
       .select(
-        "id, label, login_email, renewal_due_on, services(slug, name), spotify_family_plans(seats_total)"
+        "id, label, login_email, renewal_due_on, seat_capacity, services(slug, name, account_model), spotify_family_plans(seats_total)"
       )
       .eq("status", "active")
       .order("label"),
@@ -72,19 +77,19 @@ export default async function SubscriptionsPage() {
       .map((item) => item.service_account_id)
       .filter(Boolean)
   )
-  const spotifyUsage = new Map<string, { used: number; ownerAssigned: boolean }>()
+  const accountUsage = new Map<string, { used: number; ownerAssigned: boolean }>()
   for (const subscription of busySubscriptions ?? []) {
-    if (!subscription.service_account_id || one(subscription.products)?.slug !== "spotify_family_member") {
+    if (!subscription.service_account_id || one(subscription.products)?.slug === "chatgpt_codex") {
       continue
     }
 
-    const current = spotifyUsage.get(subscription.service_account_id) ?? {
+    const current = accountUsage.get(subscription.service_account_id) ?? {
       used: 0,
       ownerAssigned: false,
     }
     current.used += 1
     current.ownerAssigned ||= subscription.slot_label === "Titular"
-    spotifyUsage.set(subscription.service_account_id, current)
+    accountUsage.set(subscription.service_account_id, current)
   }
 
   const productOptions =
@@ -98,6 +103,7 @@ export default async function SubscriptionsPage() {
         name: product.name,
         serviceName: service?.name ?? "Servicio",
         serviceSlug: service?.slug ?? "",
+        accountModel: service?.account_model === "mother" ? ("mother" as const) : ("private" as const),
         defaultDurationMonths: product.default_duration_months ?? 1,
         defaultPriceAmount: product.default_price_amount ?? 0,
         defaultPriceCurrency: product.default_price_currency ?? "BOB",
@@ -115,13 +121,13 @@ export default async function SubscriptionsPage() {
   const accountOptions =
     accounts?.map((account) => {
       const service = one(account.services)
-      const spotifyPlan = one(account.spotify_family_plans)
-      const usage = spotifyUsage.get(account.id)
+      const usage = accountUsage.get(account.id)
       const email = account.login_email ? ` · ${account.login_email}` : ""
       const overdue = renewalOverdue(
         service?.slug,
         account.renewal_due_on,
-        today
+        today,
+        service?.account_model
       )
 
       return {
@@ -131,9 +137,10 @@ export default async function SubscriptionsPage() {
         availableForSale: !privateBusyAccountIds.has(account.id) && !overdue,
         availableForCodex: !codexBusyAccountIds.has(account.id),
         renewalOverdue: overdue,
-        seatsTotal: spotifyPlan?.seats_total ?? null,
+        seatsTotal: account.seat_capacity ?? null,
         seatsUsed: usage?.used ?? 0,
         ownerAssigned: usage?.ownerAssigned ?? false,
+        accountModel: service?.account_model === "mother" ? ("mother" as const) : ("private" as const),
       }
     }) ?? []
 
@@ -214,10 +221,24 @@ export default async function SubscriptionsPage() {
         ])
     ).values()
   ).sort((a, b) => a.name.localeCompare(b.name))
+  const assignmentAccount = accountOptions.find(
+    (account) => account.id === params.account
+  )
+  const assignmentProduct = productOptions.find(
+    (product) => product.slug === params.product
+  )
+  const assignment =
+    params.new === "1" &&
+    assignmentAccount &&
+    assignmentProduct &&
+    assignmentProduct.serviceSlug === assignmentAccount.serviceSlug
+      ? { accountId: assignmentAccount.id, productSlug: assignmentProduct.slug }
+      : undefined
   return (
     <Card className="min-w-0">
       <SubscriptionsManager
         accounts={accountOptions}
+        assignment={assignment}
         countries={countries ?? []}
         defaultCountryId={
           countries?.find((country) => country.iso2 === "BO")?.id

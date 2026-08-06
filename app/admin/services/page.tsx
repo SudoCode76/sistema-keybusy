@@ -1,5 +1,3 @@
-import { PlusIcon } from "lucide-react"
-
 import {
   createProduct,
   setDefaultProduct,
@@ -65,6 +63,124 @@ const purchaseModeItems = {
   linked: "Solo enlazado",
 }
 
+function AddPlanDialog({
+  accountModel,
+  serviceId,
+  serviceName,
+}: {
+  accountModel: "mother" | "private"
+  serviceId: string
+  serviceName: string
+}) {
+  const fieldId = `plan-${serviceId}`
+
+  return (
+    <Dialog>
+      <DialogTrigger render={<Button size="sm" variant="secondary" />}>
+        Agregar plan
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Agregar plan a {serviceName}</DialogTitle>
+          <DialogDescription>
+            Este plan usará el mismo modelo de cuentas de la plataforma.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogForm action={createProduct}>
+          <FieldGroup>
+            <input name="service_id" type="hidden" value={serviceId} />
+            <Field>
+              <FieldLabel>Plataforma</FieldLabel>
+              <p className="rounded-md border px-3 py-2 text-sm">{serviceName}</p>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${fieldId}-name`}>Nombre del plan</FieldLabel>
+              <Input id={`${fieldId}-name`} name="name" required />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${fieldId}-slug`}>Código opcional</FieldLabel>
+              <Input id={`${fieldId}-slug`} name="slug" placeholder="gemini_pro_2" />
+            </Field>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field>
+                <FieldLabel>Tipo</FieldLabel>
+                <Select items={productTypeItems} name="product_type" defaultValue="profile">
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="profile">Perfil</SelectItem>
+                      <SelectItem value="seat">Acceso</SelectItem>
+                      <SelectItem value="account">Cuenta</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${fieldId}-duration`}>Meses</FieldLabel>
+                <Input id={`${fieldId}-duration`} name="default_duration_months" type="number" min="1" defaultValue="1" />
+              </Field>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <Field>
+                <FieldLabel htmlFor={`${fieldId}-price`}>Precio de venta</FieldLabel>
+                <Input id={`${fieldId}-price`} name="default_price_amount" type="number" step="0.01" />
+              </Field>
+              <Field>
+                <FieldLabel>Moneda</FieldLabel>
+                <Select name="default_price_currency" defaultValue="BOB">
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup><SelectItem value="BOB">BOB</SelectItem><SelectItem value="USDT">USDT</SelectItem></SelectGroup></SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${fieldId}-rate`}>Cambio default</FieldLabel>
+                <Input id={`${fieldId}-rate`} name="default_exchange_rate" type="number" step="0.000001" />
+              </Field>
+            </div>
+            {accountModel === "private" ? (
+              <>
+                <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
+                  <Field>
+                    <FieldLabel htmlFor={`${fieldId}-purchase`}>Compra default</FieldLabel>
+                    <Input id={`${fieldId}-purchase`} name="default_purchase_amount" type="number" step="0.01" />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Moneda compra</FieldLabel>
+                    <Select name="default_purchase_currency" defaultValue="USDT">
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectGroup><SelectItem value="USDT">USDT</SelectItem><SelectItem value="BOB">BOB</SelectItem></SelectGroup></SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`${fieldId}-purchase-rate`}>Cambio compra</FieldLabel>
+                    <Input id={`${fieldId}-purchase-rate`} name="default_purchase_exchange_rate" type="number" step="0.000001" />
+                  </Field>
+                </div>
+                <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+                  <Checkbox name="allow_account_reuse_on_cancel" value="1" />
+                  <span>
+                    <span className="font-medium">Permitir mantener la cuenta disponible al dar de baja</span>
+                    <span className="block text-muted-foreground">Aplica a cuentas privadas reutilizables.</span>
+                  </span>
+                </label>
+              </>
+            ) : (
+              <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                El costo se registra al comprar cada cuenta en Cuentas madre.
+              </p>
+            )}
+            <Field>
+              <FieldLabel>Datos solicitados al vender</FieldLabel>
+              <AccessFieldsChecklist idPrefix={fieldId} />
+            </Field>
+            <FormSubmitButton pendingLabel="Guardando...">Guardar plan</FormSubmitButton>
+          </FieldGroup>
+        </DialogForm>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default async function ServicesPage({
   searchParams,
 }: {
@@ -72,194 +188,23 @@ export default async function ServicesPage({
 }) {
   const params = await searchParams
   const { supabase } = await requireAdmin()
-  const [{ data: services }, { data: products }] = await Promise.all([
-    supabase
-      .from("services")
-      .select("id, slug, name, description, status")
-      .order("name"),
-    supabase
-      .from("products")
-      .select("id, service_id, slug, name, product_type, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, allow_account_reuse_on_cancel, is_default, status, services(name)")
-      .order("name"),
-  ])
-  const activeServices = (services ?? []).filter((service) => service.status === "active")
-  const serviceItems = Object.fromEntries(activeServices.map((service) => [service.id, service.name]))
-
+  const { data: products } = await supabase
+    .from("products")
+    .select("id, service_id, slug, name, product_type, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, allow_account_reuse_on_cancel, is_default, status, services(name, account_model)")
+    .order("name")
   return (
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <CardTitle>Catálogo vendible</CardTitle>
+              <CardTitle>Productos y plataformas</CardTitle>
               {params.saved ? <Badge variant="secondary">Guardado</Badge> : null}
             </div>
-            <CardDescription>{products?.length ?? 0} ítems con precio de venta.</CardDescription>
+            <CardDescription>1. Crea una plataforma. 2. Registra sus cuentas en Cuentas madre o Cuentas personales. 3. Vende desde Accesos.</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <NewPlatformDialog />
-            <Dialog>
-              <DialogTrigger render={<Button />}>
-                <PlusIcon data-icon="inline-start" />
-                Nuevo ítem
-              </DialogTrigger>
-              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Nuevo ítem vendible</DialogTitle>
-                  <DialogDescription>Lo que vendes al cliente y su precio de venta.</DialogDescription>
-                </DialogHeader>
-                <DialogForm action={createProduct}>
-                  <FieldGroup>
-                    <Field>
-                      <FieldLabel>Plataforma</FieldLabel>
-                      <Select items={serviceItems} name="service_id" required>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Seleccionar plataforma" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {activeServices.map((service) => (
-                              <SelectItem key={service.id} value={service.id}>
-                                {service.name}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="product_name">Ítem vendible</FieldLabel>
-                      <Input id="product_name" name="name" required />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="product_slug">Código opcional</FieldLabel>
-                      <Input id="product_slug" name="slug" placeholder="netflix_profile" />
-                    </Field>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <Field>
-                        <FieldLabel>Tipo</FieldLabel>
-                        <Select items={productTypeItems} name="product_type" defaultValue="profile">
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value="profile">Perfil</SelectItem>
-                              <SelectItem value="seat">Acceso</SelectItem>
-                              <SelectItem value="account">Cuenta</SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field>
-                        <FieldLabel htmlFor="default_duration_months">Meses</FieldLabel>
-                        <Input
-                          id="default_duration_months"
-                          name="default_duration_months"
-                          type="number"
-                          min="1"
-                          defaultValue="1"
-                        />
-                      </Field>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <Field>
-                        <FieldLabel htmlFor="default_price_amount">Precio de venta</FieldLabel>
-                        <Input
-                          id="default_price_amount"
-                          name="default_price_amount"
-                          type="number"
-                          step="0.01"
-                        />
-                      </Field>
-                      <Field>
-                        <FieldLabel>Moneda</FieldLabel>
-                        <Select name="default_price_currency" defaultValue="BOB">
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value="BOB">BOB</SelectItem>
-                              <SelectItem value="USDT">USDT</SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field>
-                        <FieldLabel htmlFor="default_exchange_rate">Cambio default</FieldLabel>
-                        <Input
-                          id="default_exchange_rate"
-                          name="default_exchange_rate"
-                          type="number"
-                          step="0.000001"
-                        />
-                      </Field>
-                    </div>
-                    <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-4">
-                      <Field>
-                        <FieldLabel>Compra</FieldLabel>
-                        <Select items={purchaseModeItems} name="purchase_mode" defaultValue="inventory">
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value="inventory">Cuenta madre</SelectItem>
-                              <SelectItem value="individual">Cuenta privada</SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field>
-                        <FieldLabel htmlFor="default_purchase_amount">Compra default</FieldLabel>
-                        <Input
-                          id="default_purchase_amount"
-                          name="default_purchase_amount"
-                          type="number"
-                          step="0.01"
-                        />
-                      </Field>
-                      <Field>
-                        <FieldLabel>Moneda compra</FieldLabel>
-                        <Select name="default_purchase_currency" defaultValue="USDT">
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value="USDT">USDT</SelectItem>
-                              <SelectItem value="BOB">BOB</SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field>
-                        <FieldLabel htmlFor="default_purchase_exchange_rate">Cambio compra</FieldLabel>
-                        <Input
-                          id="default_purchase_exchange_rate"
-                          name="default_purchase_exchange_rate"
-                          type="number"
-                          step="0.000001"
-                        />
-                      </Field>
-                    </div>
-                    <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
-                      <Checkbox name="allow_account_reuse_on_cancel" value="1" />
-                      <span>
-                        <span className="font-medium">Permitir mantener la cuenta disponible al dar de baja</span>
-                        <span className="block text-muted-foreground">Aplica a cuentas privadas reutilizables.</span>
-                      </span>
-                    </label>
-                    <Field>
-                      <FieldLabel>Datos solicitados al vender</FieldLabel>
-                      <AccessFieldsChecklist idPrefix="product-new" />
-                    </Field>
-                    <Button type="submit">Guardar ítem</Button>
-                  </FieldGroup>
-                </DialogForm>
-              </DialogContent>
-            </Dialog>
           </div>
         </CardHeader>
         <CardContent>
@@ -313,6 +258,13 @@ export default async function ServicesPage({
                             </Button>
                           </form>
                         ) : null}
+                        {product.status === "active" && product.is_default ? (
+                          <AddPlanDialog
+                            accountModel={one(product.services)?.account_model === "mother" ? "mother" : "private"}
+                            serviceId={product.service_id}
+                            serviceName={one(product.services)?.name ?? "esta plataforma"}
+                          />
+                        ) : null}
                         <Dialog>
                           <DialogTrigger
                             render={<Button size="sm" variant="outline" />}
@@ -330,20 +282,9 @@ export default async function ServicesPage({
                                 <div className="grid gap-3 md:grid-cols-3">
                                   <Field>
                                     <FieldLabel>Plataforma</FieldLabel>
-                                    <Select items={serviceItems} name="service_id" defaultValue={product.service_id}>
-                                      <SelectTrigger className="w-full">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectGroup>
-                                          {activeServices.map((service) => (
-                                            <SelectItem key={service.id} value={service.id}>
-                                              {service.name}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectGroup>
-                                      </SelectContent>
-                                    </Select>
+                                    <p className="rounded-md border px-3 py-2 text-sm">
+                                      {one(product.services)?.name ?? "Plataforma"}
+                                    </p>
                                   </Field>
                                   <Field>
                                     <FieldLabel htmlFor={`name_${product.id}`}>Nombre</FieldLabel>
@@ -432,25 +373,9 @@ export default async function ServicesPage({
                                   </Field>
                                 </div>
                                 <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-2 lg:grid-cols-4">
-                                  <Field>
-                                    <FieldLabel>Compra</FieldLabel>
-                                    <Select
-                                      items={purchaseModeItems}
-                                      name="purchase_mode"
-                                      defaultValue={product.purchase_mode ?? "inventory"}
-                                    >
-                                      <SelectTrigger className="w-full">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectGroup>
-                                          <SelectItem value="inventory">Cuenta madre</SelectItem>
-                                          <SelectItem value="individual">Cuenta privada</SelectItem>
-                                          <SelectItem value="linked">Solo enlazado</SelectItem>
-                                        </SelectGroup>
-                                      </SelectContent>
-                                    </Select>
-                                  </Field>
+                                  <div className="text-sm text-muted-foreground lg:col-span-4">
+                                    Modelo: {purchaseModeItems[product.purchase_mode as keyof typeof purchaseModeItems] ?? product.purchase_mode}
+                                  </div>
                                   <Field>
                                     <FieldLabel htmlFor={`purchase_${product.id}`}>Compra default</FieldLabel>
                                     <Input

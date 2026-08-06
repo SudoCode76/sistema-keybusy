@@ -63,6 +63,7 @@ export type ProductOption = {
   name: string
   serviceName: string
   serviceSlug: string
+  accountModel: "private" | "mother"
   defaultDurationMonths: number
   defaultPriceAmount: number
   defaultPriceCurrency: "BOB" | "USDT"
@@ -80,6 +81,7 @@ export type AccountOption = {
   id: string
   label: string
   serviceSlug: string
+  accountModel: "private" | "mother"
   availableForSale: boolean
   availableForCodex: boolean
   renewalOverdue: boolean
@@ -124,6 +126,7 @@ export type SaleFormProps = {
   countries: CountryOption[]
   defaultCountryId?: string
   defaultProductSlug?: string
+  defaultServiceAccountId?: string
   onSaved?: () => void
 }
 
@@ -325,6 +328,7 @@ function SaleFormBody({
   countries,
   defaultCountryId,
   defaultProductSlug,
+  defaultServiceAccountId,
   onSaved,
   initialValues,
   submitAction,
@@ -358,14 +362,18 @@ function SaleFormBody({
   const selectedProduct = products.find(
     (product) => product.slug === productSlug
   )
+  const defaultAccount = defaultServiceAccountId
+    ? accounts.find((account) => account.id === defaultServiceAccountId)
+    : undefined
   const initialSharedAccount =
     initialValues?.serviceAccountId
       ? accounts.find(
           (account) => account.id === initialValues.serviceAccountId
         )
-      : initialProduct?.serviceSlug === "chatgpt-shared"
-      ? accounts.find((account) => account.serviceSlug === "chatgpt-shared")
-      : undefined
+      : defaultAccount ??
+        (initialProduct?.serviceSlug === "chatgpt-shared"
+          ? accounts.find((account) => account.serviceSlug === "chatgpt-shared")
+          : undefined)
   const [productLabel, setProductLabel] = useState(
     initialProduct
       ? `${initialProduct.name} · ${initialProduct.serviceName}`
@@ -380,14 +388,16 @@ function SaleFormBody({
   )
   const [providerOptions, setProviderOptions] = useState(providers)
   const [providerDialogOpen, setProviderDialogOpen] = useState(false)
-  const [accountMode, setAccountMode] = useState<"new" | "existing">("new")
+  const [accountMode, setAccountMode] = useState<"new" | "existing">(
+    defaultAccount && initialProduct?.purchaseMode === "individual" ? "existing" : "new"
+  )
   const [reusableAccessId, setReusableAccessId] = useState("new")
   const [managedEmailMode, setManagedEmailMode] = useState<"new" | "existing">(
     "new"
   )
   const [linkInventory, setLinkInventory] = useState(
     Boolean(
-      initialValues?.serviceAccountId &&
+      (initialValues?.serviceAccountId || defaultAccount) &&
         initialProduct?.purchaseMode === "inventory"
     )
   )
@@ -442,6 +452,7 @@ function SaleFormBody({
   }
   const isSpotify = selectedProduct?.slug === "spotify_family_member"
   const isCodex = selectedProduct?.slug === "chatgpt_codex"
+  const isMother = selectedProduct?.accountModel === "mother"
   const selectedReusableAccess =
     isSpotify && reusableAccessId !== "new"
       ? releasedSpotifyAccesses.find(
@@ -453,8 +464,8 @@ function SaleFormBody({
     selectedProduct?.purchaseMode === "individual" &&
     selectedProduct.allowAccountReuseOnCancel
   const usesOptionalInventory =
-    selectedProduct?.purchaseMode === "inventory" && !isSpotify
-  const requiredAccountService = isSpotify
+    selectedProduct?.purchaseMode === "inventory" && !isMother
+  const requiredAccountService = isMother
     ? selectedProduct?.serviceSlug
     : usesOptionalInventory
       ? linkInventory
@@ -467,10 +478,10 @@ function SaleFormBody({
     ? accounts.filter(
         (account) =>
           account.serviceSlug === requiredAccountService &&
-          (!isSpotify || account.seatsTotal !== null) &&
+          (!isMother || account.seatsTotal !== null) &&
           (!account.renewalOverdue ||
             account.id === initialValues?.serviceAccountId) &&
-            (accountMode === "new" ||
+            (isMother || accountMode === "new" ||
             (isCodex ? account.availableForCodex : account.availableForSale) ||
             account.id === initialValues?.serviceAccountId)
       )
@@ -488,6 +499,13 @@ function SaleFormBody({
   )
   const spotifySelectionInvalid =
     isSpotify && (!accountId || spotifyPlanUnavailable)
+  const motherSelectionInvalid =
+    isMother &&
+    (!accountId ||
+      (selectedAccount?.seatsTotal !== null &&
+        selectedAccount !== undefined &&
+        selectedAccount.seatsUsed >= selectedAccount.seatsTotal &&
+        selectedAccount.id !== initialValues?.serviceAccountId))
   const createsInventoryOnSale =
     selectedProduct?.purchaseMode === "individual" && accountMode === "new"
   const showsProvider =
@@ -1079,8 +1097,8 @@ function SaleFormBody({
             {requiredAccountService ? (
               <Field>
                 <FieldLabel>
-                  {isSpotify
-                    ? "Plan familiar Spotify"
+                  {isMother
+                    ? isSpotify ? "Plan familiar Spotify" : "Cuenta madre"
                     : accountMode === "existing"
                       ? "Cuenta disponible"
                       : (copy.accountLabel ?? "Inventario enlazado")}
@@ -1110,6 +1128,11 @@ function SaleFormBody({
                               accountId: initialValues?.serviceAccountId ?? null,
                               seatType: initialValues?.profileLabel ?? null,
                             })) ||
+                          (!isSpotify &&
+                            isMother &&
+                            account.seatsTotal !== null &&
+                            account.seatsUsed >= account.seatsTotal &&
+                            account.id !== initialValues?.serviceAccountId) ||
                           (isCodex && !account.availableForCodex)
 
                         return (
@@ -1119,7 +1142,7 @@ function SaleFormBody({
                             value={account.label}
                           >
                             {account.label}
-                            {isSpotify && account.seatsTotal !== null
+                            {isMother && account.seatsTotal !== null
                               ? ` · ${account.seatsUsed}/${account.seatsTotal} cupos`
                               : ""}
                             {isCodex && !account.availableForCodex
@@ -1134,19 +1157,19 @@ function SaleFormBody({
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                {isSpotify &&
+                {isMother &&
                 selectedAccount &&
                 selectedAccount.seatsTotal !== null ? (
                   <FieldDescription>
                     {selectedAccount.seatsUsed}/{selectedAccount.seatsTotal}{" "}
                     cupos ocupados
-                    {selectedAccount.ownerAssigned ? " · titular asignado" : ""}
+                    {isSpotify && selectedAccount.ownerAssigned ? " · titular asignado" : ""}
                   </FieldDescription>
                 ) : null}
                 {accountOptions.length === 0 ? (
                   <FieldDescription>
-                    {isSpotify
-                      ? "Primero crea un plan familiar Spotify activo."
+                    {isMother
+                      ? "Primero crea una cuenta madre activa con cupos disponibles."
                       : accountMode === "existing"
                         ? "No hay cuentas privadas disponibles."
                         : "Primero crea inventario activo para este ítem."}
@@ -1468,6 +1491,7 @@ function SaleFormBody({
               contactInvalid ||
               telegramInvalid ||
               spotifySelectionInvalid ||
+              motherSelectionInvalid ||
               !!liveAccountConflict ||
               !!liveExpiredMatch
             }
@@ -1486,6 +1510,7 @@ function SaleFormBody({
               contactInvalid ||
               telegramInvalid ||
               spotifySelectionInvalid ||
+              motherSelectionInvalid ||
               !!liveAccountConflict ||
               !!liveExpiredMatch ||
               currentConflict?.kind === "expired_sale" ||

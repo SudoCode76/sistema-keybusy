@@ -1,7 +1,6 @@
 import { claimFirstAdmin } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -9,21 +8,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { requireUser } from "@/lib/auth"
 import { fetchBinanceAverage } from "@/lib/binance"
 import { formatDate, formatDateTime } from "@/lib/date"
 import { money } from "@/lib/money"
-import { whatsappUrl } from "@/lib/phone"
-import { MessageCircleIcon } from "lucide-react"
 
+import { DashboardPendingRenewals } from "./dashboard-pending-renewals"
 import { SalesTrendCharts } from "./sales-trend-charts"
 import { boliviaToday } from "./subscriptions/mother-access"
 
@@ -83,7 +73,7 @@ export default async function AdminPage() {
     supabase
       .from("subscriptions")
       .select(
-        "id, status, slot_label, ends_on, customers(display_name, phone_e164), products(name, services(slug)), service_accounts(label)"
+        "id, status, slot_label, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, customers(display_name, phone_e164), products(name, services(slug)), service_accounts(label)"
       )
       .not("status", "in", "(canceled,inactive)")
       .lte("ends_on", today)
@@ -104,6 +94,25 @@ export default async function AdminPage() {
   const pendingRenewals = Number(current?.pending_renewal_count ?? 0)
   const overdueRenewals = Number(current?.overdue_renewal_count ?? 0)
   const upcomingRenewals = Number(current?.upcoming_renewal_count ?? 0)
+  const pendingRenewalRows = (renewals ?? []).map((item) => {
+    const customer = one(item.customers)
+    const product = one(item.products)
+    const service = one(product?.services ?? null)
+
+    return {
+      id: item.id,
+      customerName: customer?.display_name ?? "Cliente",
+      customerPhoneE164: customer?.phone_e164 ?? null,
+      productName: product?.name ?? "Ítem",
+      serviceSlug: service?.slug ?? null,
+      accountLabel: one(item.service_accounts)?.label ?? item.slot_label ?? null,
+      endsOn: item.ends_on,
+      durationMonths: Number(item.duration_months ?? 1),
+      currentPriceAmount: Number(item.current_price_amount ?? 0),
+      currentPriceCurrency: item.current_price_currency === "USDT" ? ("USDT" as const) : ("BOB" as const),
+      currentExchangeRate: binanceRate?.value ?? item.current_exchange_rate,
+    }
+  })
 
   return (
     <>
@@ -197,85 +206,7 @@ export default async function AdminPage() {
 
       <SalesTrendCharts rows={salesTrends ?? []} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Renovaciones pendientes</CardTitle>
-          <CardDescription>
-            Accesos vencidos o que renuevan hoy.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Ítem vendido</TableHead>
-                <TableHead>Inventario</TableHead>
-                <TableHead>Finaliza</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>WhatsApp</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(renewals ?? []).length ? (
-                (renewals ?? []).map((item) => {
-                  const customer = one(item.customers)
-                  const product = one(item.products)
-                  const service = one(product?.services ?? null)
-                  const message =
-                    service?.slug === "spotify"
-                      ? "Hola, ¿desea renovar su suscripcion a spotify?"
-                      : `Hola, ¿desea renovar ${product?.name ?? "su suscripción"}?`
-                  const whatsapp = whatsappUrl(customer?.phone_e164, message)
-                  const overdue = item.ends_on < today
-
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell>{customer?.display_name ?? "Cliente"}</TableCell>
-                      <TableCell>{product?.name ?? "Item"}</TableCell>
-                      <TableCell>
-                        {one(item.service_accounts)?.label ?? item.slot_label ?? "-"}
-                      </TableCell>
-                      <TableCell>{formatDate(item.ends_on)}</TableCell>
-                      <TableCell>
-                        <Badge variant={overdue ? "destructive" : "secondary"}>
-                          {overdue ? "Vencida" : "Renueva hoy"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {whatsapp ? (
-                          <a
-                            className={buttonVariants({ size: "sm" })}
-                            href={whatsapp}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            <MessageCircleIcon data-icon="inline-start" />
-                            Contactar
-                          </a>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">
-                            Sin teléfono
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              ) : (
-                <TableRow>
-                  <TableCell
-                    className="py-8 text-center text-muted-foreground"
-                    colSpan={6}
-                  >
-                    No hay renovaciones pendientes.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <DashboardPendingRenewals rows={pendingRenewalRows} today={today} />
     </>
   )
 }

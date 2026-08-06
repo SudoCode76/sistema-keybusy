@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -64,7 +64,7 @@ export function AccessFieldsChecklist({
 }
 
 export function NewPlatformDialog() {
-  const [mode, setMode] = useState<"inventory" | "individual">("inventory")
+  const [model, setModel] = useState<"mother" | "private">("private")
 
   return (
     <Dialog>
@@ -75,10 +75,32 @@ export function NewPlatformDialog() {
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Nueva plataforma</DialogTitle>
-          <DialogDescription>Crea la plataforma y su primer ítem vendible.</DialogDescription>
+        <DialogDescription>Define cómo se asignarán las cuentas y crea su primer plan vendible.</DialogDescription>
         </DialogHeader>
         <DialogForm action={createPlatformWithProduct}>
           <FieldGroup>
+            <input name="account_model" type="hidden" value={model} />
+            <Field>
+              <FieldLabel>¿Cómo se vende esta plataforma?</FieldLabel>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  className={`rounded-xl border p-4 text-left transition-colors ${model === "private" ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+                  onClick={() => setModel("private")}
+                  type="button"
+                >
+                  <span className="block font-medium">Cuentas privadas</span>
+                  <span className="mt-1 block text-sm text-muted-foreground">Una cuenta disponible por cada cliente.</span>
+                </button>
+                <button
+                  className={`rounded-xl border p-4 text-left transition-colors ${model === "mother" ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+                  onClick={() => setModel("mother")}
+                  type="button"
+                >
+                  <span className="block font-medium">Cuenta madre con cupos</span>
+                  <span className="mt-1 block text-sm text-muted-foreground">Varios clientes comparten una misma cuenta.</span>
+                </button>
+              </div>
+            </Field>
             <div className="grid gap-3 md:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="platform_name">Plataforma</FieldLabel>
@@ -95,31 +117,16 @@ export function NewPlatformDialog() {
             </Field>
             <div className="grid gap-3 md:grid-cols-2">
               <Field>
-                <FieldLabel htmlFor="first_product_name">Primer ítem</FieldLabel>
-                <Input id="first_product_name" name="product_name" required />
+                <FieldLabel htmlFor="first_product_name">Primer plan vendible</FieldLabel>
+                <Input id="first_product_name" name="product_name" placeholder="Gemini Pro familiar" required />
+                <FieldDescription>Es el nombre que verá el cliente al comprar.</FieldDescription>
               </Field>
               <Field>
                 <FieldLabel htmlFor="first_product_slug">Código opcional</FieldLabel>
                 <Input id="first_product_slug" name="product_slug" placeholder="youtube_private" />
               </Field>
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <Field>
-                <FieldLabel>Modelo</FieldLabel>
-                <Select
-                  name="purchase_mode"
-                  value={mode === "individual" ? "Cuenta privada" : "Cuenta madre"}
-                  onValueChange={(value) => setMode(value === "Cuenta privada" ? "individual" : "inventory")}
-                >
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="Cuenta madre">Cuenta madre</SelectItem>
-                      <SelectItem value="Cuenta privada">Cuenta privada</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
+            <div className="grid gap-3 md:grid-cols-2">
               <Field>
                 <FieldLabel>Tipo</FieldLabel>
                 <Select name="product_type" defaultValue="profile">
@@ -138,9 +145,16 @@ export function NewPlatformDialog() {
                 <Input id="platform_months" name="default_duration_months" type="number" min="1" defaultValue="1" />
               </Field>
             </div>
+            {model === "mother" ? (
+              <Field className="rounded-lg border border-dashed p-3">
+                <FieldLabel htmlFor="platform_seat_capacity">Cupos por cuenta madre</FieldLabel>
+                <Input id="platform_seat_capacity" min="1" name="default_seat_capacity" required type="number" defaultValue="5" />
+                <FieldDescription>El costo de compra se registra después en Cuentas madre, al crear cada cuenta.</FieldDescription>
+              </Field>
+            ) : null}
             <div className="grid gap-3 md:grid-cols-3">
               <Field>
-                <FieldLabel htmlFor="platform_sale_price">Precio de venta</FieldLabel>
+                <FieldLabel htmlFor="platform_sale_price">Precio de venta del plan</FieldLabel>
                 <Input id="platform_sale_price" name="default_price_amount" type="number" step="0.01" />
               </Field>
               <Field>
@@ -155,7 +169,7 @@ export function NewPlatformDialog() {
                 <Input id="platform_sale_rate" name="default_exchange_rate" type="number" step="0.000001" />
               </Field>
             </div>
-            {mode === "individual" ? (
+            {model === "private" ? (
               <>
                 <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
                   <Field>
@@ -187,7 +201,7 @@ export function NewPlatformDialog() {
               <FieldLabel>Datos solicitados al vender</FieldLabel>
               <AccessFieldsChecklist
                 idPrefix="platform"
-                includeTwoFactor={mode === "individual"}
+                includeTwoFactor={model === "private"}
               />
             </Field>
             <Button type="submit">Guardar plataforma</Button>
