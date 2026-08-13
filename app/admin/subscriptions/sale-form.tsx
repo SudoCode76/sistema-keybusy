@@ -91,11 +91,13 @@ export type AccountOption = {
 }
 
 export type ReleasedSpotifyAccessOption = {
+  memberAccountId: string
   subscriptionId: string
   serviceAccountId: string
   serviceAccountLabel: string
   customerName: string
   loginEmail: string
+  memberName: string | null
   loginPassword: string | null
   emailPassword: string | null
   invitationEmail: string | null
@@ -127,6 +129,7 @@ export type SaleFormProps = {
   defaultCountryId?: string
   defaultProductSlug?: string
   defaultServiceAccountId?: string
+  defaultReusableAccessId?: string
   onSaved?: () => void
 }
 
@@ -329,6 +332,7 @@ function SaleFormBody({
   defaultCountryId,
   defaultProductSlug,
   defaultServiceAccountId,
+  defaultReusableAccessId,
   onSaved,
   initialValues,
   submitAction,
@@ -340,6 +344,11 @@ function SaleFormBody({
         product.slug === (initialValues?.productSlug ?? defaultProductSlug)
     ) ??
     products[0]
+  const initialReusableAccess = defaultReusableAccessId
+    ? releasedSpotifyAccesses.find(
+        (access) => access.subscriptionId === defaultReusableAccessId
+      )
+    : undefined
   const [state, action, pending] = useActionState(submitAction, {})
   const [productSlug, setProductSlug] = useState(initialProduct?.slug ?? "")
   const [countryId, setCountryId] = useState(
@@ -349,12 +358,15 @@ function SaleFormBody({
   const [telegramUsername, setTelegramUsername] = useState(
     initialValues?.telegramUsername ? `@${initialValues.telegramUsername}` : ""
   )
-  const [loginEmail, setLoginEmail] = useState(initialValues?.loginEmail ?? "")
+  const [loginEmail, setLoginEmail] = useState(
+    initialValues?.loginEmail ?? initialReusableAccess?.loginEmail ?? ""
+  )
+  const [memberName, setMemberName] = useState(initialReusableAccess?.memberName ?? "")
   const [invitationEmail, setInvitationEmail] = useState(
-    initialValues?.invitationEmail ?? ""
+    initialValues?.invitationEmail ?? initialReusableAccess?.invitationEmail ?? ""
   )
   const [emailPassword, setEmailPassword] = useState(
-    initialValues?.emailPassword ?? ""
+    initialValues?.emailPassword ?? initialReusableAccess?.emailPassword ?? ""
   )
   const [duplicateCheck, setDuplicateCheck] = useState<DuplicateCheck | null>(
     null
@@ -370,7 +382,9 @@ function SaleFormBody({
       ? accounts.find(
           (account) => account.id === initialValues.serviceAccountId
         )
-      : defaultAccount ??
+      : initialReusableAccess
+        ? accounts.find((account) => account.id === initialReusableAccess.serviceAccountId)
+        : defaultAccount ??
         (initialProduct?.serviceSlug === "chatgpt-shared"
           ? accounts.find((account) => account.serviceSlug === "chatgpt-shared")
           : undefined)
@@ -391,9 +405,11 @@ function SaleFormBody({
   const [accountMode, setAccountMode] = useState<"new" | "existing">(
     defaultAccount && initialProduct?.purchaseMode === "individual" ? "existing" : "new"
   )
-  const [reusableAccessId, setReusableAccessId] = useState("new")
+  const [reusableAccessId, setReusableAccessId] = useState(
+    defaultReusableAccessId ?? "new"
+  )
   const [managedEmailMode, setManagedEmailMode] = useState<"new" | "existing">(
-    "new"
+    initialReusableAccess?.emailAddressId ? "existing" : "new"
   )
   const [linkInventory, setLinkInventory] = useState(
     Boolean(
@@ -459,6 +475,7 @@ function SaleFormBody({
           (access) => access.subscriptionId === reusableAccessId
         )
       : undefined
+  const reusingSpotifyMember = Boolean(selectedReusableAccess)
   const editing = Boolean(initialValues)
   const canReuseIndividual =
     selectedProduct?.purchaseMode === "individual" &&
@@ -492,6 +509,7 @@ function SaleFormBody({
   const spotifyPlanUnavailable = Boolean(
     isSpotify &&
     selectedAccount &&
+    !reusingSpotifyMember &&
     isSpotifyPlanUnavailable(selectedAccount, spotifySeatType, {
       accountId: initialValues?.serviceAccountId ?? null,
       seatType: initialValues?.profileLabel ?? null,
@@ -502,7 +520,7 @@ function SaleFormBody({
   const motherSelectionInvalid =
     isMother &&
     (!accountId ||
-      (selectedAccount?.seatsTotal !== null &&
+      (!reusingSpotifyMember && selectedAccount?.seatsTotal !== null &&
         selectedAccount !== undefined &&
         selectedAccount.seatsUsed >= selectedAccount.seatsTotal &&
         selectedAccount.id !== initialValues?.serviceAccountId))
@@ -940,11 +958,12 @@ function SaleFormBody({
                           (item) => item.id === access.serviceAccountId
                         )
                       : undefined
-                    setAccountId(access?.serviceAccountId ?? "")
+                  setAccountId(access?.serviceAccountId ?? "")
                     setAccountLabel(
                       familyPlan?.label ?? access?.serviceAccountLabel ?? ""
                     )
                     setLoginEmail(access?.loginEmail ?? "")
+                    setMemberName(access?.memberName ?? "")
                     setEmailPassword(access?.emailPassword ?? "")
                     setInvitationEmail(access?.invitationEmail ?? "")
                     setManagedEmailMode(
@@ -1014,51 +1033,59 @@ function SaleFormBody({
             ) : null}
 
             {isSpotify ? (
-              <Field>
-                <FieldLabel>Tipo de cupo Spotify</FieldLabel>
-                <input
-                  name="profile_label"
-                  type="hidden"
-                  value={spotifySeatType}
-                />
-                <Select
-                  value={spotifySeatType}
-                  onValueChange={(value) => {
-                    const next =
-                      value === SPOTIFY_OWNER ? SPOTIFY_OWNER : SPOTIFY_MEMBER
-                    setSpotifySeatType(next)
-
-                    if (
-                      selectedAccount &&
-                      isSpotifyPlanUnavailable(selectedAccount, next, {
+              <FieldGroup className="grid gap-3 md:grid-cols-2">
+                <Field>
+                  <FieldLabel>Tipo de cupo Spotify</FieldLabel>
+                  <input
+                    name="profile_label"
+                    type="hidden"
+                    value={spotifySeatType}
+                  />
+                  <Select
+                    value={spotifySeatType}
+                    disabled={reusingSpotifyMember}
+                    onValueChange={(value) => {
+                      const next = value === SPOTIFY_OWNER ? SPOTIFY_OWNER : SPOTIFY_MEMBER
+                      setSpotifySeatType(next)
+                      if (selectedAccount && isSpotifyPlanUnavailable(selectedAccount, next, {
                         accountId: initialValues?.serviceAccountId ?? null,
                         seatType: initialValues?.profileLabel ?? null,
-                      })
-                    ) {
-                      setAccountId("")
-                      setAccountLabel("")
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={SPOTIFY_MEMBER}>
-                        {SPOTIFY_MEMBER}
-                      </SelectItem>
-                      <SelectItem value={SPOTIFY_OWNER}>
-                        {SPOTIFY_OWNER}
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <FieldDescription>
-                  El titular usa la cuenta madre y ocupa uno de los cupos del
-                  plan.
-                </FieldDescription>
-              </Field>
+                      })) {
+                        setAccountId("")
+                        setAccountLabel("")
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value={SPOTIFY_MEMBER}>{SPOTIFY_MEMBER}</SelectItem>
+                        <SelectItem value={SPOTIFY_OWNER}>{SPOTIFY_OWNER}</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    {reusingSpotifyMember
+                      ? "Esta membresía ya existe en Spotify y seguirá ocupando el mismo cupo."
+                      : "El titular usa la cuenta madre y ocupa uno de los cupos del plan."}
+                  </FieldDescription>
+                </Field>
+                {spotifySeatType === SPOTIFY_MEMBER ? (
+                  <Field>
+                    <FieldLabel htmlFor="member_name">Nombre de la cuenta</FieldLabel>
+                    <Input
+                      id="member_name"
+                      name="member_name"
+                      onChange={(event) => setMemberName(event.target.value)}
+                      placeholder="Ej. Familia de Ana"
+                      value={memberName}
+                    />
+                    <FieldDescription>Opcional. Se conserva al reasignar esta membresía.</FieldDescription>
+                  </Field>
+                ) : null}
+              </FieldGroup>
             ) : null}
 
             {canReuseIndividual && !editing ? (
@@ -1104,8 +1131,9 @@ function SaleFormBody({
                       : (copy.accountLabel ?? "Inventario enlazado")}
                 </FieldLabel>
                 <Select
-                  key={productSlug}
+                  key={`${productSlug}:${reusableAccessId}`}
                   value={accountLabel}
+                  disabled={reusingSpotifyMember}
                   onValueChange={(value) => {
                     const account = accountOptions.find(
                       (item) => item.label === value
@@ -1123,7 +1151,7 @@ function SaleFormBody({
                     <SelectGroup>
                       {accountOptions.map((account) => {
                         const unavailable =
-                          (isSpotify &&
+                          (!reusingSpotifyMember && isSpotify &&
                             isSpotifyPlanUnavailable(account, spotifySeatType, {
                               accountId: initialValues?.serviceAccountId ?? null,
                               seatType: initialValues?.profileLabel ?? null,
@@ -1256,7 +1284,7 @@ function SaleFormBody({
                 </FieldGroup>
               ) : null}
 
-              {isSpotify && spotifySeatType === SPOTIFY_OWNER ? (
+                  {isSpotify && spotifySeatType === SPOTIFY_OWNER ? (
                 <Alert>
                   <AlertTitle>Credenciales de la cuenta madre</AlertTitle>
                   <AlertDescription>
@@ -1267,7 +1295,8 @@ function SaleFormBody({
 
               {copy.loginEmailLabel &&
               accountMode === "new" &&
-              (!isSpotify || spotifySeatType === SPOTIFY_MEMBER) ? (
+              (!isSpotify || spotifySeatType === SPOTIFY_MEMBER) &&
+              !reusingSpotifyMember ? (
                 <ManagedEmailPicker
                   key={`${reusableAccessId}:${selectedReusableAccess?.emailAddressId ?? initialValues?.managedEmailId ?? ""}`}
                   email={loginEmail}

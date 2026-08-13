@@ -12,7 +12,12 @@ function one<T>(value: T | T[] | null): T | null {
 export default async function SubscriptionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string; new?: string; product?: string }>
+  searchParams: Promise<{
+    account?: string
+    member?: string
+    new?: string
+    product?: string
+  }>
 }) {
   const params = await searchParams
   const { supabase } = await requireAdmin()
@@ -24,7 +29,7 @@ export default async function SubscriptionsPage({
     { data: providers },
     { data: countries },
     { data: busySubscriptions },
-    { data: spotifyAccesses },
+    { data: spotifyMembers },
   ] = await Promise.all([
     getSubscriptionsPage(supabase),
     supabase
@@ -57,11 +62,9 @@ export default async function SubscriptionsPage({
       .not("service_account_id", "is", null)
       .eq("status", "active"),
     supabase
-      .from("subscriptions")
-      .select(
-        "id, service_account_id, status, slot_label, ends_on, updated_at, customers(display_name), products!inner(slug), service_accounts(label), subscription_access_details(login_email, login_password, email_password, invitation_email), email_usages(email_address_id, ended_at)"
-      )
-      .eq("products.slug", "spotify_family_member")
+      .from("spotify_member_accounts")
+      .select("id, service_account_id, source_subscription_id, current_subscription_id, login_email, login_password, email_password, invitation_email, member_name, status, updated_at, source_subscription:subscriptions!spotify_member_accounts_source_subscription_id_fkey(customers(display_name), email_usages(email_address_id, ended_at))")
+      .neq("status", "removed")
       .order("updated_at", { ascending: false }),
   ])
 
@@ -87,9 +90,35 @@ export default async function SubscriptionsPage({
       used: 0,
       ownerAssigned: false,
     }
-    current.used += 1
+    if (one(subscription.products)?.slug !== "spotify_family_member") {
+      current.used += 1
+    }
     current.ownerAssigned ||= subscription.slot_label === "Titular"
     accountUsage.set(subscription.service_account_id, current)
+  }
+
+  for (const member of spotifyMembers ?? []) {
+    const current = accountUsage.get(member.service_account_id) ?? {
+      used: 0,
+      ownerAssigned: false,
+    }
+    current.used += 1
+    accountUsage.set(member.service_account_id, current)
+  }
+
+  for (const subscription of busySubscriptions ?? []) {
+    if (!subscription.service_account_id || one(subscription.products)?.slug !== "spotify_family_member") {
+      continue
+    }
+    if (subscription.slot_label === "Titular") {
+      const current = accountUsage.get(subscription.service_account_id) ?? {
+        used: 0,
+        ownerAssigned: false,
+      }
+      current.used += 1
+      current.ownerAssigned = true
+      accountUsage.set(subscription.service_account_id, current)
+    }
   }
 
   const productOptions =
@@ -144,60 +173,27 @@ export default async function SubscriptionsPage({
       }
     }) ?? []
 
-  const activeSpotifyEmails = new Set(
-    (spotifyAccesses ?? [])
-      .filter(
-        (access) =>
-          !["canceled", "inactive"].includes(access.status) &&
-          access.ends_on >= today
-      )
-      .map((access) =>
-        one(access.subscription_access_details)?.login_email
-          ?.trim()
-          .toLowerCase()
-      )
-      .filter((email): email is string => Boolean(email))
+  const accountLabels = new Map(
+    (accounts ?? []).map((account) => [account.id, account.label ?? "Plan Spotify"])
   )
-  const seenReleasedSpotifyEmails = new Set<string>()
-  const releasedSpotifyAccesses = (spotifyAccesses ?? []).flatMap((access) => {
-    const detail = one(access.subscription_access_details)
-    const email = detail?.login_email?.trim()
-    const normalizedEmail = email?.toLowerCase()
-    const released =
-      ["canceled", "inactive"].includes(access.status) || access.ends_on < today
-
-    if (
-      !released ||
-      access.slot_label === "Titular" ||
-      !access.service_account_id ||
-      !email ||
-      !normalizedEmail ||
-      activeSpotifyEmails.has(normalizedEmail) ||
-      seenReleasedSpotifyEmails.has(normalizedEmail)
-    ) {
-      return []
-    }
-
-    seenReleasedSpotifyEmails.add(normalizedEmail)
-    const emailUsage =
-      access.email_usages.find((usage) => !usage.ended_at) ??
-      access.email_usages[0]
-
-    return [
-      {
-        subscriptionId: access.id,
-        serviceAccountId: access.service_account_id,
-        serviceAccountLabel:
-          one(access.service_accounts)?.label ?? "Plan Spotify",
-        customerName: one(access.customers)?.display_name ?? "Sin nombre",
-        loginEmail: email,
-        loginPassword: detail?.login_password ?? null,
-        emailPassword: detail?.email_password ?? null,
-        invitationEmail: detail?.invitation_email ?? null,
-        emailAddressId: emailUsage?.email_address_id ?? null,
-        releasedOn: access.updated_at ?? access.ends_on,
-      },
-    ]
+  const releasedSpotifyAccesses = (spotifyMembers ?? []).flatMap((member) => {
+    if (member.status !== "available" || !member.source_subscription_id) return []
+    const source = one(member.source_subscription)
+    const emailUsage = source?.email_usages?.find((usage) => !usage.ended_at) ?? source?.email_usages?.[0]
+    return [{
+      memberAccountId: member.id,
+      subscriptionId: member.source_subscription_id,
+      serviceAccountId: member.service_account_id,
+      serviceAccountLabel: accountLabels.get(member.service_account_id) ?? "Plan Spotify",
+      customerName: one(source?.customers)?.display_name ?? "Sin nombre",
+      loginEmail: member.login_email,
+      memberName: member.member_name,
+      loginPassword: member.login_password,
+      emailPassword: member.email_password,
+      invitationEmail: member.invitation_email,
+      emailAddressId: emailUsage?.email_address_id ?? null,
+      releasedOn: member.updated_at,
+    }]
   })
 
   const providerOptions =
@@ -232,7 +228,13 @@ export default async function SubscriptionsPage({
     assignmentAccount &&
     assignmentProduct &&
     assignmentProduct.serviceSlug === assignmentAccount.serviceSlug
-      ? { accountId: assignmentAccount.id, productSlug: assignmentProduct.slug }
+      ? {
+          accountId: assignmentAccount.id,
+          productSlug: assignmentProduct.slug,
+          reusableAccessId: releasedSpotifyAccesses.find(
+            (access) => access.subscriptionId === params.member && access.serviceAccountId === assignmentAccount.id
+          )?.subscriptionId,
+        }
       : undefined
   return (
     <Card className="min-w-0">

@@ -28,6 +28,7 @@ export function SaleDialog({
     url.searchParams.delete("new")
     url.searchParams.delete("product")
     url.searchParams.delete("account")
+    url.searchParams.delete("member")
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`)
   }
 

@@ -4,6 +4,10 @@ import { NextResponse, type NextRequest } from "next/server"
 const publicPaths = ["/login", "/auth"]
 
 export async function updateSession(request: NextRequest) {
+  if (request.nextUrl.pathname === "/login") {
+    return NextResponse.next({ request })
+  }
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(

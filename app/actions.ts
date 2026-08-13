@@ -9,7 +9,6 @@ import {
   type DuplicateCheck,
 } from "@/app/admin/subscriptions/duplicate-check"
 import {
-  boliviaToday,
   renewalOverdue,
 } from "@/app/admin/subscriptions/mother-access"
 import { requireAdmin, requireUser } from "@/lib/auth"
@@ -420,7 +419,7 @@ export async function authenticate(
   _state: AuthState,
   formData: FormData
 ): Promise<AuthState> {
-  const supabase = await createClient()
+  const supabase = await createClient({ persistCookies: true })
   const email = requireValue(formData.get("email"), "Email")
   const password = requireValue(formData.get("password"), "Password")
   const intent = formData.get("intent")
@@ -449,7 +448,7 @@ export async function authenticate(
 }
 
 export async function signOut() {
-  const supabase = await createClient()
+  const supabase = await createClient({ persistCookies: true })
   await supabase.auth.signOut()
   redirect("/login")
 }
@@ -1629,6 +1628,7 @@ export async function createSale(
   }
   let loginEmail = managedEmail?.email ?? formText(formData.get("login_email"))
   let invitationEmail = formText(formData.get("invitation_email"))
+  const memberName = formText(formData.get("member_name"))
   let accountEmail = loginEmail ?? invitationEmail
   let loginPassword = formText(formData.get("login_password"))
   let emailPassword =
@@ -1663,66 +1663,51 @@ export async function createSale(
     return { error: productError?.message ?? "Item vendible invalido" }
   }
 
+  let reusableSpotifyMemberId: string | null = null
   if (reusableAccessSubscriptionId) {
     if (productSlug !== "spotify_family_member") {
       return { error: "La cuenta liberada solo puede reutilizarse en Spotify familiar" }
     }
 
     const { data: source, error: sourceError } = await supabase
-      .from("subscriptions")
+      .from("spotify_member_accounts")
       .select(
-        "id, service_account_id, status, slot_label, ends_on, products!inner(slug), subscription_access_details(login_email, login_password, email_password, invitation_email), email_usages(email_address_id, ended_at)"
+        "id, service_account_id, source_subscription_id, login_email, login_password, email_password, invitation_email, member_name, status, subscriptions!spotify_member_accounts_source_subscription_id_fkey(products!inner(slug), email_usages(email_address_id, ended_at))"
       )
-      .eq("id", reusableAccessSubscriptionId)
-      .eq("products.slug", "spotify_family_member")
+      .eq("source_subscription_id", reusableAccessSubscriptionId)
+      .eq("status", "available")
       .single()
 
     if (sourceError || !source) {
       return { error: "La cuenta liberada ya no está disponible" }
     }
 
-    const sourceReleased =
-      ["canceled", "inactive"].includes(source.status) ||
-      source.ends_on < boliviaToday()
-    const sourceDetail = Array.isArray(source.subscription_access_details)
-      ? (source.subscription_access_details[0] ?? null)
-      : source.subscription_access_details
+    const sourceSubscription = Array.isArray(source.subscriptions)
+      ? (source.subscriptions[0] ?? null)
+      : source.subscriptions
+    const sourceProduct = Array.isArray(sourceSubscription?.products)
+      ? (sourceSubscription.products[0] ?? null)
+      : sourceSubscription?.products
 
     if (
-      !sourceReleased ||
-      source.slot_label === "Titular" ||
       !source.service_account_id ||
-      !sourceDetail?.login_email
+      sourceProduct?.slug !== "spotify_family_member" ||
+      !source.login_email
     ) {
       return { error: "La cuenta seleccionada no está liberada para reutilizarse" }
     }
 
-    const { data: activeReuse, error: activeReuseError } = await supabase
-      .from("subscriptions")
-      .select(
-        "id, status, products!inner(slug), subscription_access_details!inner(login_email)"
-      )
-      .eq("products.slug", "spotify_family_member")
-      .eq("subscription_access_details.login_email", sourceDetail.login_email)
-      .not("status", "in", "(canceled,inactive)")
-      .neq("id", reusableAccessSubscriptionId)
-      .limit(1)
-
-    if (activeReuseError) return { error: activeReuseError.message }
-    if (activeReuse?.length) {
-      return { error: "Esta cuenta Spotify ya fue asignada a otro cliente" }
-    }
-
-    loginEmail = sourceDetail.login_email
+    reusableSpotifyMemberId = source.id
+    loginEmail = source.login_email
     saleAccountId = source.service_account_id
-    loginPassword = sourceDetail.login_password
-    emailPassword = sourceDetail.email_password
-    invitationEmail = sourceDetail.invitation_email
+    loginPassword = source.login_password
+    emailPassword = source.email_password
+    invitationEmail = source.invitation_email
     accountEmail = loginEmail ?? invitationEmail
 
     const sourceEmailUsage =
-      source.email_usages.find((usage) => !usage.ended_at) ??
-      source.email_usages[0]
+      sourceSubscription?.email_usages.find((usage) => !usage.ended_at) ??
+      sourceSubscription?.email_usages[0]
     if (sourceEmailUsage?.email_address_id) {
       const { data: sourceManagedEmail, error: sourceManagedEmailError } =
         await supabase
@@ -2125,6 +2110,25 @@ export async function createSale(
     return { error: error.message }
   }
 
+  if (subscriptionId && reusableSpotifyMemberId) {
+    const { error: memberError } = await supabase
+      .from("subscriptions")
+      .update({ spotify_member_account_id: reusableSpotifyMemberId })
+      .eq("id", subscriptionId)
+    if (memberError) return { error: memberError.message }
+  }
+
+  if (subscriptionId && productSlug === "spotify_family_member" && memberName) {
+    const memberQuery = supabase
+      .from("spotify_member_accounts")
+      .update({ member_name: memberName })
+      .neq("status", "removed")
+    const { error: memberNameError } = reusableSpotifyMemberId
+      ? await memberQuery.eq("id", reusableSpotifyMemberId)
+      : await memberQuery.eq("current_subscription_id", subscriptionId)
+    if (memberNameError) return { error: memberNameError.message }
+  }
+
   if (individualCost) {
     await insertOrThrow(
       supabase.from("costs").insert({
@@ -2513,6 +2517,36 @@ export async function reactivateSubscription(formData: FormData) {
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
   revalidatePath("/portal")
+}
+
+export async function removeSpotifyMember(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const id = requireValue(formData.get("member_id"), "Miembro Spotify")
+  const { error } = await supabase.rpc("remove_spotify_member", {
+    p_member_id: id,
+  })
+  if (error) throw new Error(error.message)
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
+}
+
+export async function updateSpotifyMemberName(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const id = requireValue(formData.get("member_id"), "Miembro Spotify")
+  const name = formText(formData.get("member_name"))
+  const { data, error } = await supabase
+    .from("spotify_member_accounts")
+    .update({ member_name: name })
+    .eq("id", id)
+    .neq("status", "removed")
+    .select("id")
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error("El miembro Spotify no existe o fue eliminado")
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
 }
 
 export async function createSubscription(formData: FormData) {

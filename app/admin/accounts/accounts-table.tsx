@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react"
 import Link from "next/link"
+import { removeSpotifyMember, updateSpotifyMemberName } from "@/app/actions"
 
 import {
   InventoryActions,
@@ -30,6 +31,7 @@ import {
   renewalOverdue,
 } from "@/app/admin/subscriptions/mother-access"
 import { CheckIcon, CopyIcon } from "lucide-react"
+import { FormSubmitButton } from "./form-submit-button"
 
 type Nested<T> = T | T[] | null | undefined
 
@@ -102,14 +104,17 @@ type ProviderOption = {
 
 type SpotifyClient = {
   id: string
+  sourceSubscriptionId: string | null
+  currentSubscriptionId: string | null
   serviceAccountId: string
   serviceAccountLabel: string
   customerName: string
   contact: string | null
+  memberName: string | null
   profileLabel: string | null
-  startsOn: string
-  endsOn: string
-  durationMonths: number
+  startsOn: string | null
+  endsOn: string | null
+  durationMonths: number | null
   status: string
 }
 
@@ -160,6 +165,7 @@ export function AccountsTable({
   accountModel,
   accounts,
   activeAccountUses,
+  accountMembers,
   spotifyClients,
   services,
   providers,
@@ -171,6 +177,7 @@ export function AccountsTable({
     serviceAccountId: string | null
     productSlug: string | null
   }>
+  accountMembers: SpotifyClient[]
   spotifyClients: SpotifyClient[]
   services: ServiceOption[]
   providers: ProviderOption[]
@@ -207,7 +214,7 @@ export function AccountsTable({
         return isAccountAvailable(account.status, hasPrivateSale)
       }
 
-      return account.status === "active" && (account.seat_capacity ?? 0) > uses.length
+      return account.status === "active" && (account.seat_capacity ?? 0) > account.spotifySeatsUsed
     })
   const platformStats = services.map((service) => {
     const serviceAccounts = accounts.filter(
@@ -218,7 +225,7 @@ export function AccountsTable({
       const hasPrivateSale = uses.some((use) => use.productSlug !== "chatgpt_codex")
       return accountModel === "private"
         ? isAccountAvailable(account.status, hasPrivateSale)
-        : account.status === "active" && (account.seat_capacity ?? 0) > uses.length
+        : account.status === "active" && (account.seat_capacity ?? 0) > account.spotifySeatsUsed
     }).length
 
     return {
@@ -330,8 +337,10 @@ export function AccountsTable({
                       : "La cuenta no está activa"
             const secrets = parseSecretPayload(one(account.account_credentials)?.secret_payload)
             const platformPassword = secrets.platform_password ?? secrets.password
-            const accountMembers = isMother
-              ? spotifyClients.filter((client) => client.serviceAccountId === account.id)
+            const membersForAccount = isMother
+              ? (serviceSlug === "spotify" ? spotifyClients : accountMembers).filter(
+                  (client) => client.serviceAccountId === account.id
+                )
               : []
 
             return (
@@ -432,12 +441,18 @@ export function AccountsTable({
                 </TableCell>
               </TableRow>
               {isMother && expandedSpotifyAccounts.includes(account.id)
-                ? accountMembers.length
-                  ? accountMembers.map((client) => (
+                ? membersForAccount.length
+                  ? membersForAccount.map((client) => (
                       <TableRow className="bg-muted/20" key={client.id}>
                         <TableCell>
                           <div className="border-l-2 border-primary/30 pl-4">
-                            <div>{client.customerName}</div>
+                            <div className="font-medium">
+                              {client.memberName || client.contact || "Miembro sin nombre"}
+                            </div>
+                            {!client.memberName ? (
+                              <div className="text-xs text-muted-foreground">Sin nombre</div>
+                            ) : null}
+                            <div className="text-sm">{client.customerName}</div>
                             <div className="text-xs text-muted-foreground">
                               {client.contact}
                             </div>
@@ -446,25 +461,69 @@ export function AccountsTable({
                         <TableCell>Cliente Spotify</TableCell>
                         <TableCell>{client.serviceAccountLabel}</TableCell>
                         <TableCell>-</TableCell>
-                        <TableCell>{formatDate(client.endsOn)}</TableCell>
+                        <TableCell>{client.endsOn ? formatDate(client.endsOn) : "-"}</TableCell>
                         <TableCell>
-                          {client.durationMonths} {client.durationMonths === 1 ? "mes" : "meses"}
+                          {client.durationMonths ? `${client.durationMonths} ${client.durationMonths === 1 ? "mes" : "meses"}` : "-"}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
-                            <Badge variant="secondary">{client.status}</Badge>
+                            <Badge variant={client.status === "removed" ? "destructive" : client.status === "available" ? "outline" : "secondary"}>
+                              {client.status === "removed"
+                                ? "Eliminado de Spotify"
+                                : client.status === "available"
+                                  ? "Disponible para reasignar · ocupa cupo"
+                                  : "Asignado a cliente"}
+                            </Badge>
                             <Badge variant="outline">
-                              {client.profileLabel ?? "Cliente"}
+                              {client.profileLabel ?? "Miembro familiar"}
                             </Badge>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Link
-                            className={buttonVariants({ size: "sm", variant: "outline" })}
-                            href="/admin/subscriptions"
-                          >
-                            Ver acceso
-                          </Link>
+                          <div className="flex justify-end gap-2">
+                            {serviceSlug === "spotify" && client.status !== "removed" ? (
+                              <form action={updateSpotifyMemberName} className="flex items-center gap-2">
+                                <input name="member_id" type="hidden" value={client.id} />
+                                <input
+                                  aria-label="Nombre de la cuenta Spotify"
+                                  className="h-9 w-40 rounded-md border bg-background px-3 text-sm"
+                                  defaultValue={client.memberName ?? ""}
+                                  name="member_name"
+                                  placeholder="Nombre de la cuenta"
+                                />
+                                <FormSubmitButton pendingLabel="Guardando..." size="sm" variant="outline">
+                                  Guardar
+                                </FormSubmitButton>
+                              </form>
+                            ) : null}
+                            {serviceSlug === "spotify" && client.status === "available" && client.sourceSubscriptionId ? (
+                              <Link
+                                className={buttonVariants({ size: "sm", variant: "default" })}
+                                href={`/admin/subscriptions?new=1&product=spotify_family_member&account=${account.id}&member=${client.sourceSubscriptionId}`}
+                              >
+                                Asignar a nuevo cliente
+                              </Link>
+                            ) : null}
+                            {serviceSlug === "spotify" && client.status === "available" ? (
+                              <form
+                                action={removeSpotifyMember}
+                                onSubmit={(event) => {
+                                  if (!window.confirm("Confirma que ya eliminaste este miembro del plan familiar de Spotify. Esto liberará el cupo.")) {
+                                    event.preventDefault()
+                                  }
+                                }}
+                              >
+                                <input name="member_id" type="hidden" value={client.id} />
+                                <FormSubmitButton
+                                  pendingLabel="Eliminando..."
+                                  size="sm"
+                                  variant="outline"
+                                >
+                                  Eliminar de Spotify
+                                </FormSubmitButton>
+                              </form>
+                            ) : null}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
