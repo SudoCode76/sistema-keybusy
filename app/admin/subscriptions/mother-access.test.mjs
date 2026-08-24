@@ -5,6 +5,7 @@ import {
   motherAccessIssueOn,
   nextRenewalSuggestion,
   renewalOverdue,
+  renewalStartDate,
 } from "./mother-access.ts"
 
 const activeSale = {
@@ -28,6 +29,22 @@ test("calcula y resuelve incidencias de cuentas madre", () => {
     "2026-07-18"
   )
   assert.equal(
+    motherAccessIssueOn({
+      ...activeSale,
+      accessIssueOn: "2026-07-15",
+      renewalDueOn: "2026-07-19",
+    }),
+    "2026-07-15"
+  )
+  assert.equal(
+    motherAccessIssueOn({
+      ...activeSale,
+      accessIssueOn: null,
+      renewalDueOn: "2026-07-19",
+    }),
+    null
+  )
+  assert.equal(
     motherAccessIssueOn({ ...activeSale, accessRestoredOn: "2026-07-18" }),
     null
   )
@@ -45,4 +62,6 @@ test("calcula y resuelve incidencias de cuentas madre", () => {
   )
   assert.equal(nextRenewalSuggestion("2026-01-31", "2026-01-10"), "2026-02-28")
   assert.equal(nextRenewalSuggestion("2026-07-15", "2026-07-18"), "2026-08-18")
+  assert.equal(renewalStartDate("2026-08-31", "2026-08-15"), "2026-08-31")
+  assert.equal(renewalStartDate("2026-08-15", "2026-08-31"), "2026-08-31")
 })

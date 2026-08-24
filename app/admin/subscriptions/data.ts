@@ -7,6 +7,7 @@ import { accessStatus } from "./duplicate-check"
 import {
   boliviaToday,
   motherAccessIssueOn as getMotherAccessIssueOn,
+  renewalStartDate,
 } from "./mother-access"
 
 type ServerClient = Awaited<ReturnType<typeof createClient>>
@@ -259,6 +260,7 @@ export async function getSubscriptionsPage(
           : accessStatus(subscription.ends_on, today),
       startsOn: subscription.starts_on,
       endsOn: subscription.ends_on,
+      renewalStartOn: renewalStartDate(subscription.ends_on, today),
       durationMonths: subscription.duration_months,
       currentPriceAmount: subscription.current_price_amount,
       currentPriceCurrency: subscription.current_price_currency ?? "BOB",

@@ -8,9 +8,11 @@ import {
   resolveCustomerId,
   type DuplicateCheck,
 } from "@/app/admin/subscriptions/duplicate-check"
+import { renewalOverdue } from "@/app/admin/subscriptions/mother-access"
 import {
-  renewalOverdue,
-} from "@/app/admin/subscriptions/mother-access"
+  addRenewalMonths,
+  parseRenewalDate,
+} from "@/app/admin/subscriptions/renewal-dates"
 import { requireAdmin, requireUser } from "@/lib/auth"
 import { fetchBinanceAverage } from "@/lib/binance"
 import { calendarDaysBetween } from "@/lib/chatgpt-account-history"
@@ -75,10 +77,10 @@ function currency(value: FormDataEntryValue | null): Currency {
   return value === "USDT" ? "USDT" : "BOB"
 }
 
-function addMonths(date: string, months: number) {
-  const next = new Date(`${date}T00:00:00`)
-  next.setMonth(next.getMonth() + months)
-  return next.toISOString().slice(0, 10)
+function calendarDate(value: FormDataEntryValue | null, name: string) {
+  const text = requireValue(value, name)
+  if (!parseRenewalDate(text)) throw new Error(`${name} no es válida`)
+  return text
 }
 
 function requireValue(value: FormDataEntryValue | null, name: string) {
@@ -87,12 +89,6 @@ function requireValue(value: FormDataEntryValue | null, name: string) {
     throw new Error(`${name} es obligatorio`)
   }
   return text
-}
-
-function accountReturnPath(formData: FormData) {
-  return formText(formData.get("return_path")) === "/admin/personal-accounts"
-    ? "/admin/personal-accounts"
-    : "/admin/accounts"
 }
 
 function revalidateAccountPages() {
@@ -733,7 +729,6 @@ export async function createPlatformWithProduct(formData: FormData) {
   revalidatePath("/admin/services")
   revalidatePath("/admin/subscriptions")
   revalidateAccountPages()
-  redirect("/admin/services?saved=1")
 }
 
 export async function createProduct(formData: FormData) {
@@ -828,7 +823,6 @@ export async function updateProductPrice(formData: FormData) {
 
   revalidatePath("/admin/services")
   revalidatePath("/admin/subscriptions")
-  redirect("/admin/services?saved=1")
 }
 
 export async function setServiceStatus(formData: FormData) {
@@ -1195,7 +1189,6 @@ export async function createServiceAccount(formData: FormData) {
   revalidatePath("/admin/emails")
   revalidatePath("/admin/costs")
   revalidatePath("/admin")
-  redirect(`${accountReturnPath(formData)}?saved=1`)
 }
 
 export async function updateServiceAccount(formData: FormData) {
@@ -1328,17 +1321,28 @@ export async function updateServiceAccount(formData: FormData) {
   revalidateAccountPages()
   revalidatePath("/admin/emails")
   revalidatePath("/admin")
-  redirect(`${accountReturnPath(formData)}?saved=1`)
 }
 
 export async function deleteServiceAccount(formData: FormData) {
   const { supabase } = await requireAdmin()
+  const id = requireValue(formData.get("id"), "Inventario")
+
+  const { data: account, error: accountError } = await supabase
+    .from("service_accounts")
+    .select("id, status")
+    .eq("id", id)
+    .maybeSingle()
+  if (accountError) throw accountError
+  if (!account) throw new Error("La cuenta no existe")
+  if (account.status === "inactive") {
+    throw new Error("La cuenta ya está archivada")
+  }
 
   await insertOrThrow(
     supabase
       .from("service_accounts")
       .update({ status: "inactive" })
-      .eq("id", requireValue(formData.get("id"), "Inventario"))
+      .eq("id", id)
       .select("id")
       .single()
   )
@@ -1347,7 +1351,6 @@ export async function deleteServiceAccount(formData: FormData) {
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin/emails")
   revalidatePath("/admin")
-  redirect(`${accountReturnPath(formData)}?saved=1`)
 }
 
 export async function markAccountDead(formData: FormData) {
@@ -1672,7 +1675,7 @@ export async function createSale(
     const { data: source, error: sourceError } = await supabase
       .from("spotify_member_accounts")
       .select(
-        "id, service_account_id, source_subscription_id, login_email, login_password, email_password, invitation_email, member_name, status, subscriptions!spotify_member_accounts_source_subscription_id_fkey(products!inner(slug), email_usages(email_address_id, ended_at))"
+        "id, service_account_id, source_subscription_id, login_email, login_password, email_password, member_name, status, subscriptions!spotify_member_accounts_source_subscription_id_fkey(products!inner(slug), email_usages(email_address_id, ended_at))"
       )
       .eq("source_subscription_id", reusableAccessSubscriptionId)
       .eq("status", "available")
@@ -1690,7 +1693,6 @@ export async function createSale(
       : sourceSubscription?.products
 
     if (
-      !source.service_account_id ||
       sourceProduct?.slug !== "spotify_family_member" ||
       !source.login_email
     ) {
@@ -1699,11 +1701,13 @@ export async function createSale(
 
     reusableSpotifyMemberId = source.id
     loginEmail = source.login_email
-    saleAccountId = source.service_account_id
+    if (!saleAccountId) {
+      return { error: "Selecciona un plan Spotify activo como destino" }
+    }
     loginPassword = source.login_password
     emailPassword = source.email_password
-    invitationEmail = source.invitation_email
-    accountEmail = loginEmail ?? invitationEmail
+    invitationEmail = null
+    accountEmail = loginEmail
 
     const sourceEmailUsage =
       sourceSubscription?.email_usages.find((usage) => !usage.ended_at) ??
@@ -2111,11 +2115,19 @@ export async function createSale(
   }
 
   if (subscriptionId && reusableSpotifyMemberId) {
-    const { error: memberError } = await supabase
-      .from("subscriptions")
-      .update({ spotify_member_account_id: reusableSpotifyMemberId })
-      .eq("id", subscriptionId)
-    if (memberError) return { error: memberError.message }
+    const { data: reusedMember, error: reusedMemberError } = await supabase
+      .from("spotify_member_accounts")
+      .select("service_account_id")
+      .eq("id", reusableSpotifyMemberId)
+      .single()
+    if (reusedMemberError) return { error: reusedMemberError.message }
+    if (reusedMember.service_account_id !== saleAccountId) {
+      const { error: memberError } = await supabase
+        .from("spotify_member_accounts")
+        .update({ status: "removed", current_subscription_id: null, removed_at: new Date().toISOString() })
+        .eq("id", reusableSpotifyMemberId)
+      if (memberError) return { error: memberError.message }
+    }
   }
 
   if (subscriptionId && productSlug === "spotify_family_member" && memberName) {
@@ -2160,18 +2172,18 @@ export async function deleteSubscription(formData: FormData) {
   const { supabase } = await requireAdmin()
   const id = requireValue(formData.get("id"), "Venta")
 
-  await insertOrThrow(supabase.from("costs").delete().eq("subscription_id", id))
-  await insertOrThrow(
-    supabase.from("payments").delete().eq("subscription_id", id)
-  )
+  const { error } = await supabase.rpc("cancel_subscription", {
+    p_subscription_id: id,
+    p_keep_account_available: false,
+  })
+  if (error) throw new Error(error.message)
+
   await insertOrThrow(
     supabase
-      .from("email_usages")
-      .update({ ended_at: new Date().toISOString() })
-      .eq("subscription_id", id)
-      .is("ended_at", null)
+      .from("subscriptions")
+      .update({ renewal_message_sent_at: null })
+      .eq("id", id)
   )
-  await insertOrThrow(supabase.from("subscriptions").delete().eq("id", id))
 
   revalidatePath("/admin")
   revalidateAccountPages()
@@ -2376,7 +2388,6 @@ export async function renewSubscription(formData: FormData) {
   const paymentCurrency = currency(formData.get("currency"))
   const rate = formNumber(formData.get("exchange_rate"))
   const values = toMoneyValues(amount, paymentCurrency, rate || undefined)
-  const today = new Date().toISOString().slice(0, 10)
 
   const { data: subscription, error } = await supabase
     .from("subscriptions")
@@ -2388,9 +2399,11 @@ export async function renewSubscription(formData: FormData) {
     throw error ?? new Error("No se encontro la venta")
   }
 
-  const periodStart =
-    subscription.ends_on < today ? today : subscription.ends_on
-  const periodEnd = addMonths(periodStart, months)
+  const periodStart = calendarDate(
+    formData.get("renewal_start_on"),
+    "Inicio de renovación"
+  )
+  const periodEnd = addRenewalMonths(periodStart, months)
 
   await insertOrThrow(
     supabase
@@ -2414,7 +2427,7 @@ export async function renewSubscription(formData: FormData) {
         subscription_id: id,
         period_start: periodStart,
         period_end: periodEnd,
-        due_on: today,
+        due_on: periodStart,
         status: "paid",
         expected_amount: amount,
         expected_currency: paymentCurrency,
@@ -2531,6 +2544,19 @@ export async function removeSpotifyMember(formData: FormData) {
   revalidatePath("/admin/subscriptions")
 }
 
+export async function removeOrphanedSpotifyMember(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const id = requireValue(formData.get("member_id"), "Miembro Spotify")
+  const { error } = await supabase.rpc("remove_orphaned_spotify_member", {
+    p_member_id: id,
+  })
+  if (error) throw new Error(error.message)
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
+  revalidatePath("/admin/account-history")
+}
+
 export async function updateSpotifyMemberName(formData: FormData) {
   const { supabase } = await requireAdmin()
   const id = requireValue(formData.get("member_id"), "Miembro Spotify")
@@ -2547,6 +2573,179 @@ export async function updateSpotifyMemberName(formData: FormData) {
 
   revalidatePath("/admin/accounts")
   revalidatePath("/admin/subscriptions")
+}
+
+export async function updateSpotifyMember(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const id = requireValue(formData.get("member_id"), "Miembro Spotify")
+  const loginEmail = requireValue(formData.get("login_email"), "Correo de la cuenta")
+  const memberName = formText(formData.get("member_name"))
+  const loginPassword = formText(formData.get("login_password"))
+  const emailPassword = formText(formData.get("email_password"))
+  const profileLabel = formText(formData.get("profile_label"))
+
+  const { data: member, error: memberError } = await supabase
+    .from("spotify_member_accounts")
+    .select("id, status, current_subscription_id")
+    .eq("id", id)
+    .single()
+  if (memberError || !member) throw memberError ?? new Error("El miembro Spotify no existe")
+  if (member.status === "removed") {
+    throw new Error("El miembro Spotify fue eliminado y no puede editarse")
+  }
+
+  if (member.current_subscription_id) {
+    const { data: access, error: accessError } = await supabase
+      .from("subscription_access_details")
+      .update({
+        login_email: loginEmail,
+        login_password: loginPassword,
+        email_password: emailPassword,
+        profile_label: profileLabel,
+      })
+      .eq("subscription_id", member.current_subscription_id)
+      .select("subscription_id")
+      .maybeSingle()
+    if (accessError) throw accessError
+    if (!access) throw new Error("No se encontraron los datos de acceso de la suscripción")
+
+    await insertOrThrow(
+      supabase
+        .from("spotify_member_accounts")
+        .update({ member_name: memberName })
+        .eq("id", id)
+    )
+  } else {
+    await insertOrThrow(
+      supabase
+        .from("spotify_member_accounts")
+        .update({
+          login_email: loginEmail,
+          login_password: loginPassword,
+          email_password: emailPassword,
+          member_name: memberName,
+        })
+        .eq("id", id)
+    )
+  }
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
+  revalidatePath("/admin")
+  revalidatePath("/admin/emails")
+  revalidatePath("/portal")
+}
+
+export async function moveSpotifyMember(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const memberId = requireValue(formData.get("member_id"), "Miembro Spotify")
+  const subscriptionId = requireValue(formData.get("subscription_id"), "Venta")
+  const targetAccountId = requireValue(
+    formData.get("target_service_account_id"),
+    "Plan destino"
+  )
+  const expectedCurrentAccountId = formText(
+    formData.get("expected_current_service_account_id")
+  )
+
+  const { error } = await supabase.rpc("move_spotify_member", {
+    p_member_id: memberId,
+    p_subscription_id: subscriptionId,
+    p_target_service_account_id: targetAccountId,
+    p_expected_current_service_account_id: expectedCurrentAccountId,
+  })
+  if (error) throw new Error(error.message)
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/personal-accounts")
+  revalidatePath("/admin/subscriptions")
+  revalidatePath("/admin")
+  revalidatePath("/admin/emails")
+  revalidatePath("/admin/payments")
+  revalidatePath("/portal")
+}
+
+export async function promoteSpotifyMemberToMother(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const amount = formNumber(formData.get("base_cost_amount"))
+  const costCurrency = currency(formData.get("base_cost_currency"))
+  let rate = formNumber(formData.get("base_cost_exchange_rate"))
+  if (amount > 0 && !rate) {
+    const result = await fetchBinanceAverage("BUY")
+    rate = result.average
+    await insertOrThrow(
+      supabase.from("exchange_rate_snapshots").insert({
+        trade_type: "BUY",
+        rows_requested: 20,
+        average_price: result.average,
+        raw_ads: result.ads,
+      })
+    )
+  }
+  const moneyValues = toMoneyValues(amount, costCurrency, rate || undefined)
+  const renewalDueOn = calendarDate(formData.get("renewal_due_on"), "Próximo pago")
+  const seatCapacity = formNumber(formData.get("seat_capacity"), 6)
+
+  const { error } = await supabase.rpc("promote_spotify_member_to_mother", {
+    p_member_id: requireValue(formData.get("member_id"), "Miembro Spotify"),
+    p_label: requireValue(formData.get("label"), "Etiqueta"),
+    p_provider_id: optionalId(formData.get("provider_id")),
+    p_base_cost_amount: amount,
+    p_base_cost_currency: costCurrency,
+    p_base_cost_exchange_rate: rate || null,
+    p_base_cost_bob: moneyValues.bob,
+    p_base_cost_usdt: moneyValues.usdt,
+    p_renewal_due_on: renewalDueOn,
+    p_seat_capacity: seatCapacity,
+    p_invite_url: formText(formData.get("invite_url")),
+    p_address: formText(formData.get("address")),
+  })
+  if (error) throw new Error(error.message)
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
+  revalidatePath("/admin")
+  revalidatePath("/admin/emails")
+}
+
+export async function demoteSpotifyMotherToMembers(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  let assignments: unknown
+  try {
+    assignments = JSON.parse(formText(formData.get("assignments")) ?? "[]")
+  } catch {
+    throw new Error("Las asignaciones no son válidas")
+  }
+  if (!Array.isArray(assignments)) throw new Error("Las asignaciones no son válidas")
+
+  const { error } = await supabase.rpc("demote_spotify_mother_to_members", {
+    p_account_id: requireValue(formData.get("account_id"), "Cuenta madre"),
+    p_assignments: assignments,
+  })
+  if (error) throw new Error(error.message)
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
+  revalidatePath("/admin")
+  revalidatePath("/admin/emails")
+}
+
+export async function assignPendingSpotifyMember(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const { error } = await supabase.rpc("assign_pending_spotify_member", {
+    p_member_id: requireValue(formData.get("member_id"), "Miembro Spotify"),
+    p_subscription_id: requireValue(formData.get("subscription_id"), "Venta"),
+    p_target_service_account_id: requireValue(
+      formData.get("target_service_account_id"),
+      "Plan destino"
+    ),
+  })
+  if (error) throw new Error(error.message)
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
+  revalidatePath("/admin")
+  revalidatePath("/admin/emails")
 }
 
 export async function createSubscription(formData: FormData) {
@@ -2567,7 +2766,7 @@ export async function createSubscription(formData: FormData) {
       service_account_id: formText(formData.get("service_account_id")),
       slot_label: formText(formData.get("slot_label")),
       starts_on: startsOn,
-      ends_on: addMonths(startsOn, duration),
+      ends_on: addRenewalMonths(startsOn, duration),
       duration_months: duration,
       current_price_amount: price,
       current_price_currency: priceCurrency,
@@ -2589,7 +2788,7 @@ export async function createSubscription(formData: FormData) {
     .insert({
       subscription_id: subscription.id,
       period_start: startsOn,
-      period_end: addMonths(startsOn, duration),
+      period_end: addRenewalMonths(startsOn, duration),
       due_on: startsOn,
       status: formData.get("paid_now") ? "paid" : "pending",
       expected_amount: price,

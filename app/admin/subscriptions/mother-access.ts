@@ -11,6 +11,10 @@ export function boliviaToday(value = new Date()) {
   return `${part("year")}-${part("month")}-${part("day")}`
 }
 
+export function renewalStartDate(endsOn: string, today = boliviaToday()) {
+  return endsOn < today ? today : endsOn
+}
+
 export function isMotherService(
   _serviceSlug: string | null | undefined,
   accountModel?: string | null

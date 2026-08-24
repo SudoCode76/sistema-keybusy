@@ -1,6 +1,5 @@
 import { InventoryForm } from "@/app/admin/accounts/inventory-form"
 import { AccountsTable } from "@/app/admin/accounts/accounts-table"
-import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import {
   Card,
@@ -31,12 +30,9 @@ function one<T>(value: T | T[] | null): T | null {
 
 export async function AccountsInventoryPage({
   accountModel,
-  searchParams,
 }: {
   accountModel: AccountModel
-  searchParams: Promise<{ saved?: string }>
 }) {
-  const params = await searchParams
   const { supabase } = await requireAdmin()
   const [{ data: accounts }, { data: services }, { data: providers }, { data: linkedSales }, { data: spotifyMembers }] =
     await Promise.all([
@@ -57,12 +53,12 @@ export async function AccountsInventoryPage({
         .order("name"),
       supabase
         .from("subscriptions")
-        .select("id, service_account_id, status, starts_on, ends_on, duration_months, slot_label, products(slug), customers(display_name, phone_e164), subscription_access_details(login_email, profile_label), service_accounts(label)")
+        .select("id, service_account_id, status, starts_on, ends_on, duration_months, slot_label, products(slug, name, purchase_mode, allow_account_reuse_on_cancel), customers(display_name, phone, phone_e164, email, telegram_username), subscription_access_details(login_email, login_password, email_password, profile_label), service_accounts(label)")
         .eq("status", "active")
         .not("service_account_id", "is", null),
       supabase
         .from("spotify_member_accounts")
-        .select("id, service_account_id, source_subscription_id, current_subscription_id, login_email, member_name, status, created_at, updated_at, source_subscription:subscriptions!spotify_member_accounts_source_subscription_id_fkey(customers(display_name), starts_on, ends_on, duration_months, status), current_subscription:subscriptions!spotify_member_accounts_current_subscription_id_fkey(customers(display_name), starts_on, ends_on, duration_months, status)")
+        .select("id, service_account_id, source_subscription_id, current_subscription_id, login_email, login_password, email_password, member_name, status, created_at, updated_at, source_subscription:subscriptions!spotify_member_accounts_source_subscription_id_fkey(customers(display_name, phone, phone_e164, email, telegram_username), starts_on, ends_on, duration_months, status, products(purchase_mode, allow_account_reuse_on_cancel), subscription_access_details(login_email, login_password, email_password, profile_label)), current_subscription:subscriptions!spotify_member_accounts_current_subscription_id_fkey(customers(display_name, phone, phone_e164, email, telegram_username), starts_on, ends_on, duration_months, status, products(purchase_mode, allow_account_reuse_on_cancel), subscription_access_details(login_email, login_password, email_password, profile_label))")
         .order("created_at"),
     ])
 
@@ -88,34 +84,116 @@ export async function AccountsInventoryPage({
       serviceAccountLabel: one(sale.service_accounts)?.label ?? "Cuenta madre",
       customerName: customer?.display_name ?? "Cliente",
       contact: access?.login_email ?? customer?.phone_e164 ?? null,
+      loginEmail: access?.login_email ?? null,
+      loginPassword: access?.login_password ?? null,
+      emailPassword: access?.email_password ?? null,
       memberName: null,
       profileLabel: access?.profile_label ?? sale.slot_label,
+      searchText: [
+        customer?.display_name,
+        customer?.phone,
+        customer?.phone_e164,
+        customer?.email,
+        customer?.telegram_username,
+        access?.login_email,
+        one(sale.products)?.name,
+        sale.slot_label,
+      ].filter(Boolean).join(" "),
+      purchaseMode: one(sale.products)?.purchase_mode ?? null,
+      allowAccountReuseOnCancel: one(sale.products)?.allow_account_reuse_on_cancel ?? false,
       startsOn: sale.starts_on,
       endsOn: sale.ends_on,
       durationMonths: sale.duration_months,
       status: "assigned",
+      hasActiveSale: true,
     }]
   })
   const accountMembers = (spotifyMembers ?? []).map((member) => {
     const currentSale = one(member.current_subscription)
     const sourceSale = one(member.source_subscription)
-    const sale = currentSale ?? sourceSale
+    const currentAccess = one(currentSale?.subscription_access_details)
+    const sourceAccess = one(sourceSale?.subscription_access_details)
+    const currentCustomer = one(currentSale?.customers)
+    const sourceCustomer = one(sourceSale?.customers)
+    const hasCurrentSale = Boolean(
+      member.current_subscription_id && currentSale?.status === "active"
+    )
     return {
       id: member.id,
       sourceSubscriptionId: member.source_subscription_id,
       currentSubscriptionId: member.current_subscription_id,
       serviceAccountId: member.service_account_id,
       serviceAccountLabel: accountLabels.get(member.service_account_id) ?? "Plan Spotify",
-      customerName: one(sale?.customers)?.display_name ?? "Sin cliente",
+      customerName: hasCurrentSale
+        ? one(currentSale?.customers)?.display_name ?? "Cliente"
+        : "Sin cliente",
       contact: member.login_email,
+      loginEmail: currentAccess?.login_email ?? member.login_email,
+      loginPassword: currentAccess?.login_password ?? member.login_password,
+      emailPassword: currentAccess?.email_password ?? member.email_password,
       memberName: member.member_name,
-      profileLabel: "Miembro familiar",
-      startsOn: sale?.starts_on ?? null,
-      endsOn: sale?.ends_on ?? null,
-      durationMonths: sale?.duration_months ?? null,
+      profileLabel: hasCurrentSale
+        ? currentAccess?.profile_label ?? "Miembro familiar"
+        : "Miembro familiar",
+      searchText: [
+        member.login_email,
+        member.member_name,
+        currentCustomer?.display_name,
+        currentCustomer?.phone,
+        currentCustomer?.phone_e164,
+        currentCustomer?.email,
+        currentCustomer?.telegram_username,
+        currentAccess?.login_email,
+        sourceCustomer?.display_name,
+        sourceCustomer?.phone,
+        sourceCustomer?.phone_e164,
+        sourceCustomer?.email,
+        sourceCustomer?.telegram_username,
+        sourceAccess?.login_email,
+      ].filter(Boolean).join(" "),
+      purchaseMode: hasCurrentSale ? one(currentSale?.products)?.purchase_mode ?? null : null,
+      allowAccountReuseOnCancel: hasCurrentSale
+        ? one(currentSale?.products)?.allow_account_reuse_on_cancel ?? false
+        : false,
+      startsOn: hasCurrentSale ? currentSale?.starts_on ?? null : null,
+      endsOn: hasCurrentSale ? currentSale?.ends_on ?? null : null,
+      durationMonths: hasCurrentSale ? currentSale?.duration_months ?? null : null,
       status: member.status,
+      hasActiveSale: hasCurrentSale,
     }
   })
+  const spotifyConversionClients = [
+    ...accountMembers,
+    ...(linkedSales ?? []).flatMap((sale) => {
+      if (!sale.service_account_id || one(sale.products)?.slug !== "spotify_family_member" || sale.slot_label !== "Titular") {
+        return []
+      }
+      const customer = one(sale.customers)
+      const access = one(sale.subscription_access_details)
+      return [{
+        id: sale.id,
+        sourceSubscriptionId: null,
+        currentSubscriptionId: sale.id,
+        serviceAccountId: sale.service_account_id,
+        serviceAccountLabel: one(sale.service_accounts)?.label ?? "Plan Spotify",
+        customerName: customer?.display_name ?? "Cliente",
+        contact: access?.login_email ?? customer?.phone_e164 ?? null,
+        loginEmail: access?.login_email ?? null,
+        loginPassword: access?.login_password ?? null,
+        emailPassword: access?.email_password ?? null,
+        memberName: null,
+        profileLabel: access?.profile_label ?? "Titular",
+        searchText: [customer?.display_name, access?.login_email, sale.id].filter(Boolean).join(" "),
+        purchaseMode: one(sale.products)?.purchase_mode ?? null,
+        allowAccountReuseOnCancel: one(sale.products)?.allow_account_reuse_on_cancel ?? false,
+        startsOn: sale.starts_on,
+        endsOn: sale.ends_on,
+        durationMonths: sale.duration_months,
+        status: "assigned",
+        hasActiveSale: true,
+      }]
+    }),
+  ]
   const accountUsage = new Map<string, number>()
   for (const sale of linkedSales ?? []) {
     if (!sale.service_account_id || one(sale.products)?.slug === "chatgpt_codex") continue
@@ -162,10 +240,7 @@ export async function AccountsInventoryPage({
     <Card>
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <CardTitle>{title}</CardTitle>
-            {params.saved ? <Badge variant="secondary">Guardado</Badge> : null}
-          </div>
+          <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
         </div>
         <Dialog>
@@ -192,6 +267,7 @@ export async function AccountsInventoryPage({
         activeAccountUses={activeAccountUses}
         accountMembers={isMother ? activeAccountMembers : []}
         spotifyClients={isMother ? accountMembers : []}
+        spotifyConversionClients={isMother ? spotifyConversionClients : []}
         returnPath={returnPath}
         services={services ?? []}
         providers={providerOptions}

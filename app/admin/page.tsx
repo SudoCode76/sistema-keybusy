@@ -73,7 +73,7 @@ export default async function AdminPage() {
     supabase
       .from("subscriptions")
       .select(
-        "id, status, slot_label, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, customers(display_name, phone_e164), products(name, services(slug)), service_accounts(label)"
+        "id, status, slot_label, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, customers(display_name, phone_e164), products(name, purchase_mode, allow_account_reuse_on_cancel, services(slug)), service_accounts(label, login_email, username, email_addresses(email)), subscription_access_details(login_email), email_usages(email_address_id, ended_at, email_addresses(email))"
       )
       .not("status", "in", "(canceled,inactive)")
       .lte("ends_on", today)
@@ -98,6 +98,20 @@ export default async function AdminPage() {
     const customer = one(item.customers)
     const product = one(item.products)
     const service = one(product?.services ?? null)
+    const account = one(item.service_accounts)
+    const detail = one(item.subscription_access_details)
+    const activeEmailUsage = (item.email_usages ?? []).find(
+      (usage) => usage.ended_at === null
+    )
+    const managedEmail = one(activeEmailUsage?.email_addresses ?? null)
+    const accountInventoryEmail = one(account?.email_addresses ?? null)
+    const accountEmail =
+      managedEmail?.email ??
+      detail?.login_email ??
+      account?.login_email ??
+      accountInventoryEmail?.email ??
+      account?.username ??
+      null
 
     return {
       id: item.id,
@@ -105,8 +119,12 @@ export default async function AdminPage() {
       customerPhoneE164: customer?.phone_e164 ?? null,
       productName: product?.name ?? "Ítem",
       serviceSlug: service?.slug ?? null,
-      accountLabel: one(item.service_accounts)?.label ?? item.slot_label ?? null,
+      accountLabel: account?.label ?? item.slot_label ?? null,
+      accountEmail,
+      purchaseMode: product?.purchase_mode ?? null,
+      allowAccountReuseOnCancel: Boolean(product?.allow_account_reuse_on_cancel),
       endsOn: item.ends_on,
+      renewalStartOn: item.ends_on < today ? today : item.ends_on,
       durationMonths: Number(item.duration_months ?? 1),
       currentPriceAmount: Number(item.current_price_amount ?? 0),
       currentPriceCurrency: item.current_price_currency === "USDT" ? ("USDT" as const) : ("BOB" as const),

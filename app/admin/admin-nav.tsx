@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import {
   BadgeDollarSignIcon,
   CreditCardIcon,
+  HistoryIcon,
   HomeIcon,
   KeyRoundIcon,
   MailIcon,
@@ -27,6 +28,7 @@ const nav = [
   { href: "/admin/subscriptions", label: "Accesos", icon: RepeatIcon },
   { href: "/admin/services", label: "Productos y plataformas", icon: PackageIcon },
   { href: "/admin/accounts", label: "Cuentas madre", icon: KeyRoundIcon },
+  { href: "/admin/account-history", label: "Historial de cuentas", icon: HistoryIcon },
   { href: "/admin/personal-accounts", label: "Cuentas personales", icon: UserRoundIcon },
   { href: "/admin/emails", label: "Correos", icon: MailIcon },
   { href: "/admin/payments", label: "Pagos", icon: CreditCardIcon },

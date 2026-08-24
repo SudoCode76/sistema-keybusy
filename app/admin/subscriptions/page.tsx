@@ -1,5 +1,6 @@
 import { Card } from "@/components/ui/card"
 import { requireAdmin } from "@/lib/auth"
+import { fetchBinanceAverage } from "@/lib/binance"
 
 import { getSubscriptionsPage } from "./data"
 import { boliviaToday, renewalOverdue } from "./mother-access"
@@ -22,6 +23,19 @@ export default async function SubscriptionsPage({
   const params = await searchParams
   const { supabase } = await requireAdmin()
   const today = boliviaToday()
+  const binanceRatePromise = fetchBinanceAverage("BUY")
+    .then((result) => result.average)
+    .catch(async () => {
+      const { data } = await supabase
+        .from("exchange_rate_snapshots")
+        .select("average_price")
+        .eq("trade_type", "BUY")
+        .order("captured_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const value = Number(data?.average_price)
+      return Number.isFinite(value) && value > 0 ? value : null
+    })
   const [
     initialPage,
     { data: products },
@@ -30,6 +44,7 @@ export default async function SubscriptionsPage({
     { data: countries },
     { data: busySubscriptions },
     { data: spotifyMembers },
+    binanceRate,
   ] = await Promise.all([
     getSubscriptionsPage(supabase),
     supabase
@@ -63,9 +78,10 @@ export default async function SubscriptionsPage({
       .eq("status", "active"),
     supabase
       .from("spotify_member_accounts")
-      .select("id, service_account_id, source_subscription_id, current_subscription_id, login_email, login_password, email_password, invitation_email, member_name, status, updated_at, source_subscription:subscriptions!spotify_member_accounts_source_subscription_id_fkey(customers(display_name), email_usages(email_address_id, ended_at))")
+      .select("id, service_account_id, source_subscription_id, current_subscription_id, login_email, login_password, email_password, member_name, status, updated_at, source_subscription:subscriptions!spotify_member_accounts_source_subscription_id_fkey(customers(display_name), email_usages(email_address_id, ended_at))")
       .neq("status", "removed")
       .order("updated_at", { ascending: false }),
+    binanceRatePromise,
   ])
 
   const privateBusyAccountIds = new Set(
@@ -190,7 +206,6 @@ export default async function SubscriptionsPage({
       memberName: member.member_name,
       loginPassword: member.login_password,
       emailPassword: member.email_password,
-      invitationEmail: member.invitation_email,
       emailAddressId: emailUsage?.email_address_id ?? null,
       releasedOn: member.updated_at,
     }]
@@ -252,6 +267,7 @@ export default async function SubscriptionsPage({
         products={productOptions}
         providers={providerOptions}
         releasedSpotifyAccesses={releasedSpotifyAccesses}
+        binanceRate={binanceRate}
       />
     </Card>
   )

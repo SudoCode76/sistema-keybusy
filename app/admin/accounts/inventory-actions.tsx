@@ -1,12 +1,14 @@
 "use client"
 
 import {
+  demoteSpotifyMotherToMembers,
   createCost,
   deleteServiceAccount,
   markAccountDead,
   renewMotherAccount,
 } from "@/app/actions"
 import { InventoryForm } from "@/app/admin/accounts/inventory-form"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Dialog,
@@ -55,6 +57,18 @@ type ProviderOption = {
   id: string
   name: string
   serviceIds: string[]
+}
+
+type SpotifyConversionClient = {
+  id: string
+  currentSubscriptionId: string | null
+  serviceAccountId: string
+  customerName: string
+  contact: string | null
+  memberName: string | null
+  loginEmail: string | null
+  status: string
+  hasActiveSale: boolean
 }
 
 type Nested<T> = T | T[] | null | undefined
@@ -163,6 +177,8 @@ export function InventoryActions({
   returnPath = "/admin/accounts",
   services,
   providers,
+  spotifyConversionClients,
+  spotifyFamilyPlans,
 }: {
   account: InventoryAccount
   assignmentHref?: string
@@ -172,12 +188,36 @@ export function InventoryActions({
   returnPath?: "/admin/accounts" | "/admin/personal-accounts"
   services: ServiceOption[]
   providers: ProviderOption[]
+  spotifyConversionClients: SpotifyConversionClient[]
+  spotifyFamilyPlans: Array<{
+    id: string
+    label: string | null
+    loginEmail: string | null
+    seatsTotal: number
+    seatsUsed: number
+    renewalDueOn: string | null
+    isOverdue: boolean
+  }>
 }) {
   const [viewOpen, setViewOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [renewOpen, setRenewOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [convertOpen, setConvertOpen] = useState(false)
+  const [conversionTargets, setConversionTargets] = useState<Record<string, string>>({})
   const spotifyPlan = one(account.spotify_family_plans)
+  const isSpotify = one(account.services)?.slug === "spotify"
   const isMother = one(account.services)?.account_model === "mother"
+  const isSpotifyMother = isSpotify && isMother
+  const activeConversionClients = spotifyConversionClients.filter(
+    (client) => client.hasActiveSale && client.currentSubscriptionId
+  )
+  const conversionAssignments = activeConversionClients.map((client) => ({
+    subscription_id: client.currentSubscriptionId,
+    target_service_account_id: conversionTargets[client.currentSubscriptionId ?? ""] || null,
+  }))
+  const [conversionState, setConversionState] = useState<{ error?: string }>({})
+  const [conversionPending, setConversionPending] = useState(false)
   const credentials = one(account.account_credentials)
   const secrets = parseSecretPayload(credentials?.secret_payload)
   const platformPassword = secrets.platform_password ?? secrets.password
@@ -205,10 +245,12 @@ export function InventoryActions({
               {assignmentLabel ?? "Asignar a nuevo usuario"}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setViewOpen(true)}>Ver cuenta</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setEditOpen(true)}>Editar</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setEditOpen(true)}>Editar cuenta</DropdownMenuItem>
             {account.status === "active" ? (
               <>
-                <DropdownMenuItem onClick={() => setRenewOpen(true)}>Renovar</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setRenewOpen(true)}>
+                  Renovar cuenta madre
+                </DropdownMenuItem>
                 <form action={markAccountDead}>
                   <input type="hidden" name="id" value={account.id} />
                   <FormSubmitButton pendingLabel="Marcando..." variant="ghost" size="sm">
@@ -217,17 +259,138 @@ export function InventoryActions({
                 </form>
               </>
             ) : null}
+            {isSpotifyMother && account.status === "active" ? (
+              <DropdownMenuItem
+                onClick={() => {
+                  setConversionTargets(
+                    Object.fromEntries(activeConversionClients.map((client) => [client.currentSubscriptionId as string, ""]))
+                  )
+                  setConvertOpen(true)
+                }}
+              >
+                Convertir en miembros
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <form action={deleteServiceAccount}>
-            <input type="hidden" name="id" value={account.id} />
-            <input type="hidden" name="return_path" value={returnPath} />
-            <FormSubmitButton pendingLabel="Eliminando..." variant="ghost" size="sm">
-              Eliminar
-            </FormSubmitButton>
-          </form>
+          <DropdownMenuItem onClick={() => setArchiveOpen(true)}>
+            Archivar cuenta
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Convertir cuenta madre en miembros</DialogTitle>
+            <DialogDescription>
+              Cada venta conservará su cliente, precio, fechas, pagos, credenciales e historial. Puedes moverla a otro plan o dejarla pendiente.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (event) => {
+              event.preventDefault()
+              setConversionPending(true)
+              setConversionState({})
+              try {
+                const formData = new FormData(event.currentTarget)
+                await demoteSpotifyMotherToMembers(formData)
+                setConvertOpen(false)
+              } catch (error) {
+                setConversionState({
+                  error: error instanceof Error ? error.message : "No se pudo convertir la cuenta",
+                })
+              } finally {
+                setConversionPending(false)
+              }
+            }}
+          >
+            <FieldGroup>
+              <input name="account_id" type="hidden" value={account.id} />
+              <input name="assignments" type="hidden" value={JSON.stringify(conversionAssignments)} />
+              {activeConversionClients.length ? (
+                <div className="grid gap-3">
+                  {activeConversionClients.map((client) => {
+                    const subscriptionId = client.currentSubscriptionId as string
+                    return (
+                      <div className="grid gap-2 rounded-lg border p-3" key={subscriptionId}>
+                        <div className="flex items-start justify-between gap-3 text-sm">
+                          <div className="min-w-0">
+                            <p className="font-medium">{client.memberName || client.customerName}</p>
+                            <p className="break-all text-muted-foreground">{client.contact || client.loginEmail || "Sin correo"}</p>
+                          </div>
+                          <span className="shrink-0 text-xs text-muted-foreground">Venta activa</span>
+                        </div>
+                        <Select
+                          value={conversionTargets[subscriptionId] ?? ""}
+                          onValueChange={(value) => setConversionTargets((current) => ({ ...current, [subscriptionId]: value === "__pending__" ? "" : value ?? "" }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pendiente de reasignación" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__pending__">Pendiente de reasignación</SelectItem>
+                            {spotifyFamilyPlans
+                              .filter((plan) => plan.id !== account.id)
+                              .map((plan) => {
+                                const isFull = plan.seatsUsed >= plan.seatsTotal
+                                const unavailable = isFull || plan.isOverdue
+                                return (
+                                  <SelectItem disabled={unavailable} key={plan.id} value={plan.id}>
+                                    {plan.label || "Plan Spotify"} · {plan.seatsUsed}/{plan.seatsTotal}{plan.isOverdue ? " · Vencido" : isFull ? " · Lleno" : ""}
+                                  </SelectItem>
+                                )
+                              })}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="rounded-lg border p-3 text-sm text-muted-foreground">
+                  Esta cuenta no tiene clientes activos. Se archivará como la acción de archivado actual.
+                </p>
+              )}
+              {conversionState.error ? (
+                <Alert variant="destructive">
+                  <AlertTitle>No se pudo convertir la cuenta</AlertTitle>
+                  <AlertDescription>{conversionState.error}</AlertDescription>
+                </Alert>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                <Button onClick={() => setConvertOpen(false)} type="button" variant="outline">Cancelar</Button>
+                <Button disabled={conversionPending} type="submit">
+                  {conversionPending ? "Convirtiendo..." : "Confirmar conversión"}
+                </Button>
+              </div>
+            </FieldGroup>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Archivar cuenta</DialogTitle>
+            <DialogDescription>
+              La cuenta <strong>{account.label}</strong> quedará inactiva. Se conservarán sus ventas, costos, credenciales e historial.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogForm action={deleteServiceAccount}>
+            <input name="id" type="hidden" value={account.id} />
+            <input name="return_path" type="hidden" value={returnPath} />
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setArchiveOpen(false)} type="button" variant="outline">
+                Cancelar
+              </Button>
+              <FormSubmitButton pendingLabel="Archivando..." variant="destructive">
+                Confirmar archivado
+              </FormSubmitButton>
+            </div>
+          </DialogForm>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
@@ -242,11 +405,18 @@ export function InventoryActions({
             {extraPasswords.map(([key, value]) => (
               <CopyField key={key} label={key} value={value} />
             ))}
+            {isSpotify ? (
+              <CopyField label="Dirección" value={spotifyPlan?.address} />
+            ) : null}
             <CopyField label="Link plan familiar" value={spotifyPlan?.invite_url} />
             <CopyField label="Link 2FA" value={account.two_factor_url} />
-            <CopyField label="Inicio" value={formatDate(account.started_at)} />
-            <CopyField label="Muerte" value={account.dead_at ? formatDate(account.dead_at) : null} />
-            <CopyField label="Duración" value={durationText(account.started_at, account.dead_at)} />
+            {!isSpotify ? (
+              <>
+                <CopyField label="Inicio" value={formatDate(account.started_at)} />
+                <CopyField label="Muerte" value={account.dead_at ? formatDate(account.dead_at) : null} />
+                <CopyField label="Duración" value={durationText(account.started_at, account.dead_at)} />
+              </>
+            ) : null}
             <CopyField label="Reemplazada por" value={replacementLabel} />
           </FieldGroup>
         </DialogContent>
@@ -267,8 +437,10 @@ export function InventoryActions({
       <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Registrar renovación</DialogTitle>
-            <DialogDescription>{account.label}</DialogDescription>
+            <DialogTitle>Renovar cuenta madre</DialogTitle>
+            <DialogDescription>
+              Registra el próximo pago y el costo de {account.label}. Esto no modifica las ventas de los clientes.
+            </DialogDescription>
           </DialogHeader>
           <DialogForm action={isMother ? renewMotherAccount : createCost}>
             <FieldGroup>

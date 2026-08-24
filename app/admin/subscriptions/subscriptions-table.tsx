@@ -50,6 +50,7 @@ export type SubscriptionRow = {
   status: string
   startsOn: string
   endsOn: string
+  renewalStartOn: string
   durationMonths: number
   currentPriceAmount: number
   currentPriceCurrency: "BOB" | "USDT"
@@ -125,6 +126,7 @@ export function SubscriptionsTable({
   providers,
   countries,
   defaultCountryId,
+  binanceRate,
 }: {
   initialRows: SubscriptionRow[]
   initialTotal: number
@@ -137,6 +139,7 @@ export function SubscriptionsTable({
   providers: ProviderOption[]
   countries: CountryOption[]
   defaultCountryId?: string
+  binanceRate: number | null
 }) {
   const [query, setQuery] = useState("")
   const [showCanceled, setShowCanceled] = useState(false)
@@ -366,6 +369,7 @@ export function SubscriptionsTable({
                       defaultCountryId={defaultCountryId}
                       products={products}
                       providers={providers}
+                      binanceRate={binanceRate}
                       subscription={{
                         id: item.id,
                         customerId: item.customerId,
@@ -380,6 +384,7 @@ export function SubscriptionsTable({
                         motherAccessIssueOn: item.motherAccessIssueOn,
                         slotLabel: item.slotLabel,
                         startsOn: item.startsOn,
+                        renewalStartOn: item.renewalStartOn,
                         durationMonths: item.durationMonths,
                         currentPriceAmount: item.currentPriceAmount,
                         currentPriceCurrency: item.currentPriceCurrency,

@@ -1,17 +1,29 @@
 "use client"
 
-import { Fragment, useMemo, useState } from "react"
-import Link from "next/link"
-import { removeSpotifyMember, updateSpotifyMemberName } from "@/app/actions"
-
+import { Fragment, useCallback, useMemo, useState, useSyncExternalStore } from "react"
+import { AnimatePresence, MotionConfig, motion } from "motion/react"
 import {
   InventoryActions,
   parseSecretPayload,
 } from "@/app/admin/accounts/inventory-actions"
+import { SpotifyMemberActions } from "@/app/admin/accounts/spotify-member-actions"
+import { CancelSaleAction } from "@/app/admin/accounts/cancel-sale-action"
 import { isAccountAvailable } from "@/app/admin/accounts/account-availability"
+import { accountMatchesSearch } from "@/app/admin/accounts/accounts-search"
+import {
+  ACCOUNT_COLUMN_OPTIONS,
+  DEFAULT_ACCOUNT_COLUMNS,
+  getAccountColumnsServerSnapshot,
+  getAccountColumnsSnapshot,
+  parseAccountColumns,
+  setAccountColumns,
+  subscribeAccountColumns,
+  type AccountColumnId,
+} from "@/app/admin/accounts/account-column-preferences"
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import {
   CardContent,
 } from "@/components/ui/card"
@@ -23,6 +35,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuGroup,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDate } from "@/lib/date"
 import { money } from "@/lib/money"
@@ -30,8 +52,7 @@ import {
   boliviaToday,
   renewalOverdue,
 } from "@/app/admin/subscriptions/mother-access"
-import { CheckIcon, CopyIcon } from "lucide-react"
-import { FormSubmitButton } from "./form-submit-button"
+import { CheckIcon, CopyIcon, Settings2Icon } from "lucide-react"
 
 type Nested<T> = T | T[] | null | undefined
 
@@ -82,6 +103,16 @@ type Account = {
   account_credentials?: Nested<{ secret_payload: string | null }>
 }
 
+export type SpotifyFamilyPlanOption = {
+  id: string
+  label: string | null
+  loginEmail: string | null
+  seatsTotal: number
+  seatsUsed: number
+  renewalDueOn: string | null
+  isOverdue: boolean
+}
+
 type ServiceOption = {
   id: string
   name: string
@@ -110,12 +141,19 @@ type SpotifyClient = {
   serviceAccountLabel: string
   customerName: string
   contact: string | null
+  loginEmail: string | null
+  loginPassword: string | null
+  emailPassword: string | null
   memberName: string | null
   profileLabel: string | null
+  searchText: string
+  purchaseMode: string | null
+  allowAccountReuseOnCancel: boolean
   startsOn: string | null
   endsOn: string | null
   durationMonths: number | null
   status: string
+  hasActiveSale: boolean
 }
 
 function one<T>(value: Nested<T>) {
@@ -167,6 +205,7 @@ export function AccountsTable({
   activeAccountUses,
   accountMembers,
   spotifyClients,
+  spotifyConversionClients,
   services,
   providers,
   returnPath,
@@ -179,14 +218,40 @@ export function AccountsTable({
   }>
   accountMembers: SpotifyClient[]
   spotifyClients: SpotifyClient[]
+  spotifyConversionClients: SpotifyClient[]
   services: ServiceOption[]
   providers: ProviderOption[]
   returnPath: "/admin/accounts" | "/admin/personal-accounts"
 }) {
   const [platformFilter, setPlatformFilter] = useState("all")
+  const [query, setQuery] = useState("")
   const [expandedSpotifyAccounts, setExpandedSpotifyAccounts] = useState<string[]>([])
   const [showInactive, setShowInactive] = useState(false)
   const [onlyAvailable, setOnlyAvailable] = useState(false)
+  const subscribeColumns = useCallback(
+    (listener: () => void) => subscribeAccountColumns(accountModel, listener),
+    [accountModel]
+  )
+  const getColumnsSnapshot = useCallback(
+    () => getAccountColumnsSnapshot(accountModel),
+    [accountModel]
+  )
+  const columnsSnapshot = useSyncExternalStore(
+    subscribeColumns,
+    getColumnsSnapshot,
+    getAccountColumnsServerSnapshot
+  )
+  const visibleColumns = useMemo(
+    () => new Set<AccountColumnId>(parseAccountColumns(columnsSnapshot)),
+    [columnsSnapshot]
+  )
+  const visibleColumnCount = visibleColumns.size
+  const toggleColumn = (column: AccountColumnId, checked: boolean) => {
+    const nextColumns = checked
+      ? [...visibleColumns, column]
+      : [...visibleColumns].filter((visibleColumn) => visibleColumn !== column)
+    setAccountColumns(accountModel, nextColumns)
+  }
   const today = boliviaToday()
   const activeUses = useMemo(
     () => new Map(
@@ -201,10 +266,34 @@ export function AccountsTable({
     () => new Map(accounts.map((account) => [account.id, accountLabel(account)])),
     [accounts]
   )
+  const searchChildrenByAccount = useMemo(() => {
+    const children = new Map<string, SpotifyClient[]>()
+    for (const child of [...accountMembers, ...spotifyClients]) {
+      const current = children.get(child.serviceAccountId) ?? []
+      current.push(child)
+      children.set(child.serviceAccountId, current)
+    }
+    return children
+  }, [accountMembers, spotifyClients])
+  const matchingAccountIds = useMemo(
+    () => new Set(
+      accounts
+        .filter((account) =>
+          accountMatchesSearch(
+            account,
+            searchChildrenByAccount.get(account.id) ?? [],
+            query
+          )
+        )
+        .map((account) => account.id)
+    ),
+    [accounts, query, searchChildrenByAccount]
+  )
   const filteredAccounts = accounts
     .filter((account) => showInactive || account.status === "active")
     .filter((account) => one(account.services)?.account_model === accountModel)
     .filter((account) => !platformFilter || platformFilter === "all" || one(account.services)?.slug === platformFilter)
+    .filter((account) => matchingAccountIds.has(account.id))
     .filter((account) => {
       if (!onlyAvailable) return true
       const uses = activeUses.get(account.id) ?? []
@@ -216,6 +305,34 @@ export function AccountsTable({
 
       return account.status === "active" && (account.seat_capacity ?? 0) > account.spotifySeatsUsed
     })
+  const spotifyFamilyPlans = useMemo<SpotifyFamilyPlanOption[]>(
+    () => accounts
+      .filter(
+        (account) =>
+          one(account.services)?.slug === "spotify" &&
+          account.status === "active" &&
+          one(account.spotify_family_plans)
+      )
+      .map((account) => {
+        const plan = one(account.spotify_family_plans)
+        const seatsTotal = plan?.seats_total ?? account.seat_capacity ?? 0
+        return {
+          id: account.id,
+          label: account.label,
+          loginEmail: account.login_email,
+          seatsTotal,
+          seatsUsed: account.spotifySeatsUsed,
+          renewalDueOn: account.renewal_due_on,
+          isOverdue: renewalOverdue(
+            "spotify",
+            account.renewal_due_on,
+            today,
+            "mother"
+          ),
+        }
+      }),
+    [accounts, today]
+  )
   const platformStats = services.map((service) => {
     const serviceAccounts = accounts.filter(
       (account) => one(account.services)?.slug === service.slug
@@ -236,8 +353,49 @@ export function AccountsTable({
     }
   })
   return (
+    <MotionConfig reducedMotion="user">
     <CardContent>
       <div className="mb-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            aria-label="Buscar cuenta, correo, número o cliente"
+            className="w-full md:max-w-xl"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar cuenta, correo, número o cliente..."
+            value={query}
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button size="sm" type="button" variant="outline" />}
+            >
+              <Settings2Icon data-icon="inline-start" />
+              Columnas
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Columnas visibles</DropdownMenuLabel>
+                {ACCOUNT_COLUMN_OPTIONS.map((column) => (
+                  <DropdownMenuCheckboxItem
+                    checked={visibleColumns.has(column.id)}
+                    disabled={!column.hideable}
+                    key={column.id}
+                    onCheckedChange={(checked) =>
+                      toggleColumn(column.id, checked === true)
+                    }
+                  >
+                    {column.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setAccountColumns(accountModel, DEFAULT_ACCOUNT_COLUMNS)}
+              >
+                Restablecer columnas
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <Tabs
           className="inventory-tabs-scroll w-full min-w-0 overflow-x-auto"
           value={platformFilter}
@@ -281,18 +439,18 @@ export function AccountsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Cuenta</TableHead>
-            <TableHead>Plataforma</TableHead>
-            <TableHead>Proveedor</TableHead>
-            <TableHead>Compra</TableHead>
-            <TableHead>Próximo pago</TableHead>
-            <TableHead>Duración</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead className="text-right">Acciones</TableHead>
+            {visibleColumns.has("account") ? <TableHead>Cuenta</TableHead> : null}
+            {visibleColumns.has("platform") ? <TableHead>Plataforma</TableHead> : null}
+            {visibleColumns.has("provider") ? <TableHead>Proveedor</TableHead> : null}
+            {visibleColumns.has("purchase") ? <TableHead>Compra</TableHead> : null}
+            {visibleColumns.has("renewal") ? <TableHead>Próximo pago</TableHead> : null}
+            {visibleColumns.has("duration") ? <TableHead>Duración</TableHead> : null}
+            {visibleColumns.has("status") ? <TableHead>Estado</TableHead> : null}
+            {visibleColumns.has("actions") ? <TableHead className="text-right">Acciones</TableHead> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {filteredAccounts.map((account) => {
+          {filteredAccounts.map((account, accountIndex) => {
             const serviceSlug = one(account.services)?.slug
             const uses = activeUses.get(account.id) ?? []
             const hasCodexSale = uses.some(
@@ -338,203 +496,214 @@ export function AccountsTable({
             const secrets = parseSecretPayload(one(account.account_credentials)?.secret_payload)
             const platformPassword = secrets.platform_password ?? secrets.password
             const membersForAccount = isMother
-              ? (serviceSlug === "spotify" ? spotifyClients : accountMembers).filter(
-                  (client) => client.serviceAccountId === account.id
+                ? (serviceSlug === "spotify" ? spotifyClients : accountMembers).filter(
+                  (client) =>
+                    client.serviceAccountId === account.id &&
+                    (serviceSlug !== "spotify" || client.status !== "removed")
                 )
               : []
+            const isSearchExpanded = Boolean(query.trim()) && matchingAccountIds.has(account.id)
+            const isExpanded = expandedSpotifyAccounts.includes(account.id) || isSearchExpanded
 
             return (
               <Fragment key={account.id}>
-              <TableRow>
-                <TableCell>
-                  <div className="flex flex-col items-start gap-1">
-                    <span>{account.label}</span>
-                    <CopyCredential label="Correo" value={account.login_email ?? account.username} />
-                    <CopyCredential label="Contraseña" value={platformPassword} />
-                    {isMother ? (
-                      seatsAvailable === null ? (
-                        <Badge variant="outline">Cupos sin configurar</Badge>
-                      ) : (
-                        <Badge
-                          variant={
-                            seatsAvailable === 0
-                              ? "destructive"
-                              : "secondary"
-                          }
-                        >
-                          {seatsAvailable} de {seatsTotal} cupos
-                          disponibles
-                        </Badge>
-                      )
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell>{one(account.services)?.name}</TableCell>
-                <TableCell>{one(account.providers)?.name}</TableCell>
-                <TableCell>{money(account.base_cost_usdt, "USDT")} / {money(account.base_cost_bob, "BOB")}</TableCell>
-                <TableCell>
-                  {isMother ? (
+              <motion.tr
+                animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, y: 6 }}
+                transition={{ delay: Math.min(accountIndex * 0.025, 0.18), duration: 0.22 }}
+              >
+                {visibleColumns.has("account") ? (
+                  <TableCell>
                     <div className="flex flex-col items-start gap-1">
-                      <span>{formatDate(account.renewal_due_on)}</span>
-                      {!account.renewal_due_on ? (
-                        <Badge variant="secondary">Sin fecha</Badge>
-                      ) : account.renewal_due_on === today ? (
-                        <Badge variant="destructive">Renovar hoy</Badge>
-                      ) : overdue ? (
-                        <Badge variant="destructive">Vencido</Badge>
+                      <span>{account.label}</span>
+                      <CopyCredential label="Correo" value={account.login_email ?? account.username} />
+                      <CopyCredential label="Contraseña" value={platformPassword} />
+                      {isMother ? (
+                        seatsAvailable === null ? (
+                          <Badge variant="outline">Cupos sin configurar</Badge>
+                        ) : (
+                          <Badge
+                            variant={
+                              seatsAvailable === 0
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {seatsAvailable} de {seatsTotal} cupos
+                            disponibles
+                          </Badge>
+                        )
                       ) : null}
                     </div>
-                  ) : (
-                    "-"
-                  )}
-                </TableCell>
-                <TableCell>{durationText(account.started_at, account.dead_at)}</TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-1">
-                    <Badge variant="secondary">{account.status}</Badge>
-                    {isAvailable ? (
-                      <Badge variant="secondary">{isMother ? "Con cupos disponibles" : "Disponible sin cliente"}</Badge>
-                    ) : (!isMother && hasPrivateSale) ? (
-                      <Badge variant="destructive">En uso</Badge>
-                    ) : null}
-                    {!isMother && serviceSlug === "chatgpt-private" ? (
-                      <Badge variant={hasCodexSale ? "destructive" : "outline"}>
-                        {hasCodexSale ? "Codex en uso" : "Codex disponible"}
-                      </Badge>
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
+                  </TableCell>
+                ) : null}
+                {visibleColumns.has("platform") ? <TableCell>{one(account.services)?.name}</TableCell> : null}
+                {visibleColumns.has("provider") ? <TableCell>{one(account.providers)?.name}</TableCell> : null}
+                {visibleColumns.has("purchase") ? <TableCell>{money(account.base_cost_usdt, "USDT")} / {money(account.base_cost_bob, "BOB")}</TableCell> : null}
+                {visibleColumns.has("renewal") ? (
+                  <TableCell>
                     {isMother ? (
-                      <Button
-                        onClick={() => setExpandedSpotifyAccounts((current) =>
-                          current.includes(account.id)
-                            ? current.filter((id) => id !== account.id)
-                            : [...current, account.id]
+                      <div className="flex flex-col items-start gap-1">
+                        <span>{formatDate(account.renewal_due_on)}</span>
+                        {!account.renewal_due_on ? (
+                          <Badge variant="secondary">Sin fecha</Badge>
+                        ) : account.renewal_due_on === today ? (
+                          <Badge variant="destructive">Renovar hoy</Badge>
+                        ) : overdue ? (
+                          <Badge variant="destructive">Vencido</Badge>
+                        ) : null}
+                      </div>
+                    ) : (
+                      "-"
+                    )}
+                  </TableCell>
+                ) : null}
+                {visibleColumns.has("duration") ? <TableCell>{durationText(account.started_at, account.dead_at)}</TableCell> : null}
+                {visibleColumns.has("status") ? (
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <Badge variant="secondary">{account.status}</Badge>
+                      {isAvailable ? (
+                        <Badge variant="secondary">{isMother ? "Con cupos disponibles" : "Disponible sin cliente"}</Badge>
+                      ) : (!isMother && hasPrivateSale) ? (
+                        <Badge variant="destructive">En uso</Badge>
+                      ) : null}
+                      {!isMother && serviceSlug === "chatgpt-private" ? (
+                        <Badge variant={hasCodexSale ? "destructive" : "outline"}>
+                          {hasCodexSale ? "Codex en uso" : "Codex disponible"}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                ) : null}
+                {visibleColumns.has("actions") ? (
+                  <TableCell className="text-right">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {isMother ? (
+                        <Button
+                          onClick={() => setExpandedSpotifyAccounts((current) =>
+                            current.includes(account.id)
+                              ? current.filter((id) => id !== account.id)
+                              : [...current, account.id]
+                          )}
+                          size="sm"
+                          variant="outline"
+                        >
+                          {isExpanded ? "Ocultar miembros" : "Ver miembros"}
+                        </Button>
+                      ) : null}
+                      <InventoryActions
+                        account={account}
+                        assignmentHref={
+                          canAssign && assignmentProduct
+                            ? `/admin/subscriptions?new=1&product=${assignmentProduct.slug}&account=${account.id}`
+                            : undefined
+                        }
+                        assignmentLabel={serviceSlug === "spotify" ? "Asignar miembro" : "Asignar cliente"}
+                        assignmentUnavailableReason={assignmentUnavailableReason}
+                        replacementLabel={
+                          account.replacement_account_id
+                            ? replacementLabels.get(account.replacement_account_id) ?? "Cuenta reemplazada"
+                            : null
+                        }
+                        returnPath={returnPath}
+                        services={services}
+                        providers={providers}
+                        spotifyConversionClients={spotifyConversionClients.filter(
+                          (client) => client.serviceAccountId === account.id
                         )}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {expandedSpotifyAccounts.includes(account.id) ? "Ocultar miembros" : "Ver miembros"}
-                      </Button>
-                    ) : null}
-                    <InventoryActions
-                      account={account}
-                      assignmentHref={
-                        canAssign && assignmentProduct
-                          ? `/admin/subscriptions?new=1&product=${assignmentProduct.slug}&account=${account.id}`
-                          : undefined
-                      }
-                      assignmentLabel={serviceSlug === "spotify" ? "Asignar miembro" : "Asignar cliente"}
-                      assignmentUnavailableReason={assignmentUnavailableReason}
-                      replacementLabel={
-                        account.replacement_account_id
-                          ? replacementLabels.get(account.replacement_account_id) ?? "Cuenta reemplazada"
-                          : null
-                      }
-                      returnPath={returnPath}
-                      services={services}
-                      providers={providers}
-                    />
-                  </div>
-                </TableCell>
-              </TableRow>
-              {isMother && expandedSpotifyAccounts.includes(account.id)
+                        spotifyFamilyPlans={spotifyFamilyPlans}
+                      />
+                    </div>
+                  </TableCell>
+                ) : null}
+              </motion.tr>
+              <AnimatePresence initial={false}>
+              {isMother && isExpanded
                 ? membersForAccount.length
-                  ? membersForAccount.map((client) => (
-                      <TableRow className="bg-muted/20" key={client.id}>
-                        <TableCell>
-                          <div className="border-l-2 border-primary/30 pl-4">
-                            <div className="font-medium">
-                              {client.memberName || client.contact || "Miembro sin nombre"}
+                  ? membersForAccount.map((client, memberIndex) => (
+                      <motion.tr
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-muted/20"
+                        exit={{ opacity: 0, y: -4 }}
+                        initial={{ opacity: 0, y: -4 }}
+                        key={client.id}
+                        transition={{ delay: memberIndex * 0.025, duration: 0.18 }}
+                      >
+                        {visibleColumns.has("account") ? (
+                          <TableCell>
+                            <div className="border-l-2 border-primary/30 pl-4">
+                              <div className="font-medium">
+                                {client.memberName || client.contact || "Miembro sin nombre"}
+                              </div>
+                              {!client.memberName ? (
+                                <div className="text-xs text-muted-foreground">Sin nombre</div>
+                              ) : null}
+                              <div className="text-sm">{client.customerName}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {client.contact}
+                              </div>
                             </div>
-                            {!client.memberName ? (
-                              <div className="text-xs text-muted-foreground">Sin nombre</div>
-                            ) : null}
-                            <div className="text-sm">{client.customerName}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {client.contact}
+                          </TableCell>
+                        ) : null}
+                        {visibleColumns.has("platform") ? <TableCell>Cliente Spotify</TableCell> : null}
+                        {visibleColumns.has("provider") ? <TableCell>{client.serviceAccountLabel}</TableCell> : null}
+                        {visibleColumns.has("purchase") ? <TableCell>-</TableCell> : null}
+                        {visibleColumns.has("renewal") ? <TableCell>{client.endsOn ? formatDate(client.endsOn) : "-"}</TableCell> : null}
+                        {visibleColumns.has("duration") ? (
+                          <TableCell>
+                            {client.durationMonths ? `${client.durationMonths} ${client.durationMonths === 1 ? "mes" : "meses"}` : "-"}
+                          </TableCell>
+                        ) : null}
+                        {visibleColumns.has("status") ? (
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              <Badge variant={client.status === "removed" ? "destructive" : client.status === "available" ? "outline" : "secondary"}>
+                                {client.status === "removed"
+                                  ? "Eliminado de Spotify"
+                                  : client.status === "available"
+                                    ? "Disponible para reasignar · ocupa cupo"
+                                    : "Asignado a cliente"}
+                              </Badge>
+                              <Badge variant="outline">
+                                {client.profileLabel ?? "Miembro familiar"}
+                              </Badge>
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>Cliente Spotify</TableCell>
-                        <TableCell>{client.serviceAccountLabel}</TableCell>
-                        <TableCell>-</TableCell>
-                        <TableCell>{client.endsOn ? formatDate(client.endsOn) : "-"}</TableCell>
-                        <TableCell>
-                          {client.durationMonths ? `${client.durationMonths} ${client.durationMonths === 1 ? "mes" : "meses"}` : "-"}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <Badge variant={client.status === "removed" ? "destructive" : client.status === "available" ? "outline" : "secondary"}>
-                              {client.status === "removed"
-                                ? "Eliminado de Spotify"
-                                : client.status === "available"
-                                  ? "Disponible para reasignar · ocupa cupo"
-                                  : "Asignado a cliente"}
-                            </Badge>
-                            <Badge variant="outline">
-                              {client.profileLabel ?? "Miembro familiar"}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            {serviceSlug === "spotify" && client.status !== "removed" ? (
-                              <form action={updateSpotifyMemberName} className="flex items-center gap-2">
-                                <input name="member_id" type="hidden" value={client.id} />
-                                <input
-                                  aria-label="Nombre de la cuenta Spotify"
-                                  className="h-9 w-40 rounded-md border bg-background px-3 text-sm"
-                                  defaultValue={client.memberName ?? ""}
-                                  name="member_name"
-                                  placeholder="Nombre de la cuenta"
+                          </TableCell>
+                        ) : null}
+                        {visibleColumns.has("actions") ? (
+                          <TableCell className="text-right">
+                            <div className="flex justify-end">
+                              {serviceSlug === "spotify" ? (
+                                <SpotifyMemberActions
+                                  accountId={account.id}
+                                  currentPlanEmail={account.login_email}
+                                  member={client}
+                                  providers={providers}
+                                  targetPlans={spotifyFamilyPlans}
                                 />
-                                <FormSubmitButton pendingLabel="Guardando..." size="sm" variant="outline">
-                                  Guardar
-                                </FormSubmitButton>
-                              </form>
-                            ) : null}
-                            {serviceSlug === "spotify" && client.status === "available" && client.sourceSubscriptionId ? (
-                              <Link
-                                className={buttonVariants({ size: "sm", variant: "default" })}
-                                href={`/admin/subscriptions?new=1&product=spotify_family_member&account=${account.id}&member=${client.sourceSubscriptionId}`}
-                              >
-                                Asignar a nuevo cliente
-                              </Link>
-                            ) : null}
-                            {serviceSlug === "spotify" && client.status === "available" ? (
-                              <form
-                                action={removeSpotifyMember}
-                                onSubmit={(event) => {
-                                  if (!window.confirm("Confirma que ya eliminaste este miembro del plan familiar de Spotify. Esto liberará el cupo.")) {
-                                    event.preventDefault()
-                                  }
-                                }}
-                              >
-                                <input name="member_id" type="hidden" value={client.id} />
-                                <FormSubmitButton
-                                  pendingLabel="Eliminando..."
-                                  size="sm"
-                                  variant="outline"
-                                >
-                                  Eliminar de Spotify
-                                </FormSubmitButton>
-                              </form>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                              ) : client.currentSubscriptionId ? (
+                                <CancelSaleAction
+                                  accountIsMother
+                                  allowAccountReuseOnCancel={client.allowAccountReuseOnCancel}
+                                  saleLabel={client.customerName}
+                                  subscriptionId={client.currentSubscriptionId}
+                                />
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        ) : null}
+                      </motion.tr>
                     ))
                   : (
-                    <TableRow className="bg-muted/20">
-                      <TableCell className="pl-8 text-sm text-muted-foreground" colSpan={8}>
+                    <motion.tr animate={{ opacity: 1 }} className="bg-muted/20" exit={{ opacity: 0 }} initial={{ opacity: 0 }}>
+                      <TableCell className="pl-8 text-sm text-muted-foreground" colSpan={visibleColumnCount}>
                         Esta cuenta no tiene clientes activos.
                       </TableCell>
-                    </TableRow>
+                    </motion.tr>
                   )
                 : null}
+              </AnimatePresence>
               </Fragment>
             )
           })}
@@ -542,9 +711,12 @@ export function AccountsTable({
       </Table>
       {filteredAccounts.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          Sin inventario para este filtro.
+          {query.trim()
+            ? `No se encontraron cuentas para “${query.trim()}”.`
+            : "Sin inventario para este filtro."}
         </div>
       ) : null}
     </CardContent>
+    </MotionConfig>
   )
 }

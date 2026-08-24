@@ -181,12 +181,7 @@ function AddPlanDialog({
   )
 }
 
-export default async function ServicesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ saved?: string }>
-}) {
-  const params = await searchParams
+export default async function ServicesPage() {
   const { supabase } = await requireAdmin()
   const { data: products } = await supabase
     .from("products")
@@ -197,10 +192,7 @@ export default async function ServicesPage({
       <Card>
         <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="flex items-center gap-2">
-              <CardTitle>Productos y plataformas</CardTitle>
-              {params.saved ? <Badge variant="secondary">Guardado</Badge> : null}
-            </div>
+            <CardTitle>Productos y plataformas</CardTitle>
             <CardDescription>1. Crea una plataforma. 2. Registra sus cuentas en Cuentas madre o Cuentas personales. 3. Vende desde Accesos.</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">

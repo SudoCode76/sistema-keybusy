@@ -82,6 +82,7 @@ type SubscriptionRow = {
   motherAccessIssueOn: string | null
   slotLabel: string | null
   startsOn: string
+  renewalStartOn: string
   durationMonths: number
   currentPriceAmount: number
   currentPriceCurrency: "BOB" | "USDT"
@@ -194,6 +195,7 @@ export function SubscriptionActions({
   providers,
   countries,
   defaultCountryId,
+  binanceRate,
 }: {
   subscription: SubscriptionRow
   products: ProductOption[]
@@ -201,6 +203,7 @@ export function SubscriptionActions({
   providers: ProviderOption[]
   countries: CountryOption[]
   defaultCountryId?: string
+  binanceRate: number | null
 }) {
   const [viewOpen, setViewOpen] = useState(false)
   const [open, setOpen] = useState(false)
@@ -500,17 +503,21 @@ export function SubscriptionActions({
               </form>
             )}
           </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <form action={deleteSubscription}>
-            <input name="id" type="hidden" value={subscription.id} />
-            <FormSubmitButton
-              pendingLabel="Eliminando..."
-              size="sm"
-              variant="ghost"
-            >
-              Eliminar
-            </FormSubmitButton>
-          </form>
+          {!(["canceled", "inactive"].includes(subscription.status)) ? (
+            <>
+              <DropdownMenuSeparator />
+              <form action={deleteSubscription}>
+                <input name="id" type="hidden" value={subscription.id} />
+                <FormSubmitButton
+                  pendingLabel="Eliminando..."
+                  size="sm"
+                  variant="ghost"
+                >
+                  Eliminar
+                </FormSubmitButton>
+              </form>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -623,7 +630,9 @@ export function SubscriptionActions({
               <CopyLine label="Correo o usuario de acceso" value={customerEmail} />
               <CopyLine label={platformPasswordLabel} value={customerPassword} />
               <CopyLine label="Contraseña del correo" value={customerEmailPassword} />
-              <CopyLine label="Correo invitado" value={subscription.detail?.invitation_email} />
+              {subscription.serviceSlug === "spotify" ? null : (
+                <CopyLine label="Correo invitado" value={subscription.detail?.invitation_email} />
+              )}
               <CopyLine label="Perfil" value={subscription.detail?.profile_label} />
               <CopyLine label="Notas" value={subscription.detail?.notes} />
             </section>
@@ -833,14 +842,15 @@ export function SubscriptionActions({
       </Dialog>
 
       <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Registrar renovación</DialogTitle>
             <DialogDescription>
-              Renueva desde {formatDate(subscription.endsOn)}
+              Inicio sugerido: {formatDate(subscription.renewalStartOn)}
             </DialogDescription>
           </DialogHeader>
           <RenewSubscriptionForm
+            binanceRate={binanceRate}
             onSaved={() => setRenewOpen(false)}
             subscription={subscription}
           />

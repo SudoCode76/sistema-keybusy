@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea"
 export type RenewalFormValues = {
   id: string
   endsOn: string
+  renewalStartOn: string
   durationMonths: number
   currentPriceAmount: number
   currentPriceCurrency: "BOB" | "USDT"
@@ -31,13 +32,16 @@ export type RenewalFormValues = {
 export function RenewSubscriptionForm({
   subscription,
   onSaved,
+  binanceRate,
 }: {
   subscription: RenewalFormValues
   onSaved: () => void
+  binanceRate?: number | null
 }) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  const exchangeRate = binanceRate ?? subscription.currentExchangeRate
 
   function submit(formData: FormData) {
     setError(null)
@@ -56,7 +60,22 @@ export function RenewSubscriptionForm({
     <form action={submit}>
       <FieldGroup>
         <input name="id" type="hidden" value={subscription.id} />
-        <div className="grid gap-3 md:grid-cols-3">
+        <Field>
+          <FieldLabel htmlFor={`renew_start_${subscription.id}`}>
+            Inicio de renovación
+          </FieldLabel>
+          <Input
+            defaultValue={subscription.renewalStartOn}
+            id={`renew_start_${subscription.id}`}
+            name="renewal_start_on"
+            required
+            type="date"
+          />
+          <p className="text-xs text-muted-foreground">
+            Define desde qué fecha se cubrirá el nuevo período.
+          </p>
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-3">
           <Field>
             <FieldLabel htmlFor={`renew_months_${subscription.id}`}>Meses</FieldLabel>
             <Input
@@ -93,20 +112,24 @@ export function RenewSubscriptionForm({
             </Select>
           </Field>
         </div>
-        <Field>
-          <FieldLabel htmlFor={`renew_rate_${subscription.id}`}>Tipo de cambio (Binance P2P)</FieldLabel>
-          <Input
-            defaultValue={subscription.currentExchangeRate ?? ""}
-            id={`renew_rate_${subscription.id}`}
-            name="exchange_rate"
-            step="0.000001"
-            type="number"
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor={`renew_notes_${subscription.id}`}>Notas</FieldLabel>
-          <Textarea id={`renew_notes_${subscription.id}`} name="notes" />
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor={`renew_rate_${subscription.id}`}>
+              Tipo de cambio (Binance P2P)
+            </FieldLabel>
+            <Input
+              defaultValue={exchangeRate ?? ""}
+              id={`renew_rate_${subscription.id}`}
+              name="exchange_rate"
+              step="0.000001"
+              type="number"
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`renew_notes_${subscription.id}`}>Notas</FieldLabel>
+            <Textarea id={`renew_notes_${subscription.id}`} name="notes" />
+          </Field>
+        </div>
         {error ? (
           <Alert variant="destructive">
             <AlertTitle>No se pudo renovar</AlertTitle>

@@ -31,6 +31,7 @@ export function SubscriptionsManager({
   products,
   providers,
   assignment,
+  binanceRate,
 }: {
   accounts: AccountOption[]
   releasedSpotifyAccesses: ReleasedSpotifyAccessOption[]
@@ -47,6 +48,7 @@ export function SubscriptionsManager({
     productSlug: string
     reusableAccessId?: string
   }
+  binanceRate: number | null
 }) {
   const [platform, setPlatform] = useState("all")
   const defaultProductSlug =
@@ -92,6 +94,7 @@ export function SubscriptionsManager({
           platforms={platforms}
           products={products}
           providers={providers}
+          binanceRate={binanceRate}
         />
       </CardContent>
     </>

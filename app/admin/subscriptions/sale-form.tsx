@@ -93,14 +93,13 @@ export type AccountOption = {
 export type ReleasedSpotifyAccessOption = {
   memberAccountId: string
   subscriptionId: string
-  serviceAccountId: string
+  serviceAccountId: string | null
   serviceAccountLabel: string
   customerName: string
   loginEmail: string
   memberName: string | null
   loginPassword: string | null
   emailPassword: string | null
-  invitationEmail: string | null
   emailAddressId: string | null
   releasedOn: string
 }
@@ -363,7 +362,7 @@ function SaleFormBody({
   )
   const [memberName, setMemberName] = useState(initialReusableAccess?.memberName ?? "")
   const [invitationEmail, setInvitationEmail] = useState(
-    initialValues?.invitationEmail ?? initialReusableAccess?.invitationEmail ?? ""
+    initialValues?.invitationEmail ?? ""
   )
   const [emailPassword, setEmailPassword] = useState(
     initialValues?.emailPassword ?? initialReusableAccess?.emailPassword ?? ""
@@ -958,14 +957,18 @@ function SaleFormBody({
                           (item) => item.id === access.serviceAccountId
                         )
                       : undefined
-                  setAccountId(access?.serviceAccountId ?? "")
+                    setAccountId(
+                      access?.serviceAccountId && accounts.some((item) => item.id === access.serviceAccountId)
+                        ? access.serviceAccountId
+                        : ""
+                    )
                     setAccountLabel(
                       familyPlan?.label ?? access?.serviceAccountLabel ?? ""
                     )
                     setLoginEmail(access?.loginEmail ?? "")
                     setMemberName(access?.memberName ?? "")
                     setEmailPassword(access?.emailPassword ?? "")
-                    setInvitationEmail(access?.invitationEmail ?? "")
+                    setInvitationEmail("")
                     setManagedEmailMode(
                       access?.emailAddressId ? "existing" : "new"
                     )
@@ -1068,7 +1071,7 @@ function SaleFormBody({
                   </Select>
                   <FieldDescription>
                     {reusingSpotifyMember
-                      ? "Esta membresía ya existe en Spotify y seguirá ocupando el mismo cupo."
+                      ? "Las credenciales se conservarán y puedes elegir cualquier plan Spotify activo como destino."
                       : "El titular usa la cuenta madre y ocupa uno de los cupos del plan."}
                   </FieldDescription>
                 </Field>
@@ -1133,7 +1136,6 @@ function SaleFormBody({
                 <Select
                   key={`${productSlug}:${reusableAccessId}`}
                   value={accountLabel}
-                  disabled={reusingSpotifyMember}
                   onValueChange={(value) => {
                     const account = accountOptions.find(
                       (item) => item.label === value
