@@ -175,10 +175,10 @@ function CopyLine({
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border p-2">
-      <div className="min-w-0">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border p-2">
+      <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="truncate text-sm">{value}</p>
+        <p className="break-all text-sm">{value}</p>
       </div>
       <Button type="button" variant="ghost" size="icon-sm" onClick={copy}>
         {copied ? <CheckIcon /> : <CopyIcon />}
@@ -618,12 +618,12 @@ export function SubscriptionActions({
 
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
+          <DialogHeader className="min-w-0">
             <DialogTitle>Cuenta del usuario</DialogTitle>
             <DialogDescription>{subscription.productName}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4">
-            <section className="grid gap-2" aria-labelledby={`customer-account-${subscription.id}`}>
+          <div className="grid min-w-0 gap-4 overflow-x-hidden">
+            <section className="grid min-w-0 gap-2" aria-labelledby={`customer-account-${subscription.id}`}>
               <h3 className="text-sm font-medium" id={`customer-account-${subscription.id}`}>
                 Cuenta del cliente
               </h3>
@@ -638,7 +638,7 @@ export function SubscriptionActions({
             </section>
 
             {hasDifferentInventory ? (
-              <section className="grid gap-2 border-t pt-4" aria-labelledby={`inventory-account-${subscription.id}`}>
+              <section className="grid min-w-0 gap-2 border-t pt-4" aria-labelledby={`inventory-account-${subscription.id}`}>
                 <h3 className="text-sm font-medium" id={`inventory-account-${subscription.id}`}>
                   {subscription.serviceSlug === "spotify" ? "Cuenta madre Spotify" : "Cuenta de inventario"}
                 </h3>

@@ -53,7 +53,7 @@ export async function AccountsInventoryPage({
         .order("name"),
       supabase
         .from("subscriptions")
-        .select("id, service_account_id, status, starts_on, ends_on, duration_months, slot_label, products(slug, name, purchase_mode, allow_account_reuse_on_cancel), customers(display_name, phone, phone_e164, email, telegram_username), subscription_access_details(login_email, login_password, email_password, profile_label), service_accounts(label)")
+        .select("id, service_account_id, spotify_member_account_id, status, starts_on, ends_on, duration_months, slot_label, products(slug, name, purchase_mode, allow_account_reuse_on_cancel), customers(display_name, phone, phone_e164, email, telegram_username), subscription_access_details(login_email, login_password, email_password, profile_label), service_accounts(label)")
         .eq("status", "active")
         .not("service_account_id", "is", null),
       supabase
@@ -220,10 +220,43 @@ export async function AccountsInventoryPage({
       )
     }
   }
-  const accountRows = selectedAccounts.map((account) => ({
-    ...account,
-    spotifySeatsUsed: accountUsage.get(account.id) ?? 0,
-  }))
+  const accountRows = selectedAccounts.map((account) => {
+    // Find customers assigned to this account
+    // 1. Direct sales (subscriptions)
+    const directSalesForAccount = (linkedSales ?? []).filter(
+      (sale) => sale.service_account_id === account.id
+    )
+    // 2. Spotify members
+    const spotifyMembersForAccount = (spotifyMembers ?? []).filter(
+      (member) =>
+        member.service_account_id === account.id &&
+        member.current_subscription_id &&
+        one(member.current_subscription)?.status === "active"
+    )
+
+    // Find the single customer who owns/is assigned to this mother or private account
+    // 1. Look for a sale explicitly marked as 'Titular'
+    const titularSale = directSalesForAccount.find((sale) => sale.slot_label === "Titular")
+    
+    // 2. Or a direct sale to the mother account without a separate spotify_member_account
+    const directMotherSale = directSalesForAccount.find(
+      (sale) => !sale.spotify_member_account_id
+    )
+
+    const targetSale = titularSale ?? directMotherSale ?? directSalesForAccount[0] ?? null
+    const targetCustomer = targetSale ? one(targetSale.customers) : null
+    const accountCustomerPhone =
+      targetCustomer?.phone_e164 ||
+      targetCustomer?.phone ||
+      targetCustomer?.display_name ||
+      null
+
+    return {
+      ...account,
+      spotifySeatsUsed: accountUsage.get(account.id) ?? 0,
+      accountCustomerPhone,
+    }
+  })
   const providerOptions = ((providers ?? []) as ProviderOption[]).map((provider) => ({
     id: provider.id,
     name: provider.name,

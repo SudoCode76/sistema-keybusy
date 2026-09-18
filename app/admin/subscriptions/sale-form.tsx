@@ -1196,6 +1196,11 @@ function SaleFormBody({
                     {isSpotify && selectedAccount.ownerAssigned ? " · titular asignado" : ""}
                   </FieldDescription>
                 ) : null}
+                {isMother && accountOptions.length > 0 && !accountId ? (
+                  <FieldDescription className="text-destructive">
+                    Selecciona una cuenta madre antes de guardar la venta.
+                  </FieldDescription>
+                ) : null}
                 {accountOptions.length === 0 ? (
                   <FieldDescription>
                     {isMother

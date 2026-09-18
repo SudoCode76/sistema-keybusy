@@ -310,8 +310,17 @@ export function SubscriptionsTable({
                   </TableCell>
                   <TableCell className={responsiveCellClassName}>
                     <MobileLabel>Inventario</MobileLabel>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span>{item.accountLabel ?? item.slotLabel ?? "-"}</span>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <div className="min-w-0">
+                        <span className="break-all">
+                          {item.detail?.login_email ?? item.accountLabel ?? item.slotLabel ?? "-"}
+                        </span>
+                        {item.serviceSlug === "spotify" && item.account?.login_email ? (
+                          <span className="block break-all text-xs text-muted-foreground">
+                            {item.account.login_email}
+                          </span>
+                        ) : null}
+                      </div>
                       {item.serviceSlug === "spotify" && item.slotLabel ? (
                         <Badge variant="outline">{item.slotLabel}</Badge>
                       ) : null}

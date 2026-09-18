@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useMemo, useState, useSyncExternalStore } from "react"
 import { AnimatePresence, MotionConfig, motion } from "motion/react"
+import { cn } from "@/lib/utils"
 import {
   InventoryActions,
   parseSecretPayload,
@@ -78,6 +79,7 @@ type Account = {
   two_factor_url: string | null
   notes: string | null
   spotifySeatsUsed: number
+  accountCustomerPhone?: string | null
   services?: Nested<{
     name: string | null
     slug: string | null
@@ -196,6 +198,21 @@ function CopyCredential({ label, value }: { label: string; value: string | null 
       <span className="truncate">{label}: {text}</span>
       {copied ? <CheckIcon className="size-3 shrink-0" /> : <CopyIcon className="size-3 shrink-0" />}
     </button>
+  )
+}
+
+const responsiveAccountRowClassName =
+  "grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border p-4 xl:table-row xl:rounded-none xl:border-x-0 xl:border-t-0 xl:p-0"
+const responsiveAccountCellClassName =
+  "min-w-0 whitespace-normal p-0 xl:table-cell xl:p-2"
+const responsiveMemberRowClassName =
+  "grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-lg border border-primary/20 bg-muted/30 p-3 xl:table-row xl:rounded-none xl:border-0 xl:bg-muted/20 xl:p-0"
+
+function AccountMobileLabel({ children }: { children: string }) {
+  return (
+    <span className="mb-1 block text-xs font-medium text-muted-foreground xl:hidden">
+      {children}
+    </span>
   )
 }
 
@@ -436,8 +453,8 @@ export function AccountsTable({
           </label>
         </div>
       </div>
-      <Table>
-        <TableHeader>
+      <Table className="block w-full xl:table xl:min-w-[65rem]">
+        <TableHeader className="hidden xl:table-header-group">
           <TableRow>
             {visibleColumns.has("account") ? <TableHead>Cuenta</TableHead> : null}
             {visibleColumns.has("platform") ? <TableHead>Plataforma</TableHead> : null}
@@ -449,7 +466,7 @@ export function AccountsTable({
             {visibleColumns.has("actions") ? <TableHead className="text-right">Acciones</TableHead> : null}
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody className="flex flex-col gap-4 xl:table-row-group xl:gap-0">
           {filteredAccounts.map((account, accountIndex) => {
             const serviceSlug = one(account.services)?.slug
             const uses = activeUses.get(account.id) ?? []
@@ -509,39 +526,66 @@ export function AccountsTable({
               <Fragment key={account.id}>
               <motion.tr
                 animate={{ opacity: 1, y: 0 }}
+                className={responsiveAccountRowClassName}
                 initial={{ opacity: 0, y: 6 }}
                 transition={{ delay: Math.min(accountIndex * 0.025, 0.18), duration: 0.22 }}
               >
                 {visibleColumns.has("account") ? (
-                  <TableCell>
+                  <TableCell className={cn("col-span-2", responsiveAccountCellClassName)}>
                     <div className="flex flex-col items-start gap-1">
-                      <span>{account.label}</span>
+                      <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold text-base xl:text-sm">{account.label}</span>
+                        {isMother ? (
+                          seatsAvailable === null ? (
+                            <Badge variant="outline">Cupos sin configurar</Badge>
+                          ) : (
+                            <Badge
+                              variant={
+                                seatsAvailable === 0
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                            >
+                              {seatsAvailable} de {seatsTotal} cupos disponibles
+                            </Badge>
+                          )
+                        ) : null}
+                      </div>
                       <CopyCredential label="Correo" value={account.login_email ?? account.username} />
                       <CopyCredential label="Contraseña" value={platformPassword} />
-                      {isMother ? (
-                        seatsAvailable === null ? (
-                          <Badge variant="outline">Cupos sin configurar</Badge>
-                        ) : (
-                          <Badge
-                            variant={
-                              seatsAvailable === 0
-                                ? "destructive"
-                                : "secondary"
-                            }
-                          >
-                            {seatsAvailable} de {seatsTotal} cupos
-                            disponibles
-                          </Badge>
-                        )
-                      ) : null}
+                      {account.accountCustomerPhone ? (
+                        <div className="mt-0.5 flex items-center gap-1 text-xs">
+                          <CopyCredential label="Cliente" value={account.accountCustomerPhone} />
+                        </div>
+                      ) : (
+                        <span className="mt-0.5 text-[11px] text-muted-foreground italic">
+                          Sin cliente asignado
+                        </span>
+                      )}
                     </div>
                   </TableCell>
                 ) : null}
-                {visibleColumns.has("platform") ? <TableCell>{one(account.services)?.name}</TableCell> : null}
-                {visibleColumns.has("provider") ? <TableCell>{one(account.providers)?.name}</TableCell> : null}
-                {visibleColumns.has("purchase") ? <TableCell>{money(account.base_cost_usdt, "USDT")} / {money(account.base_cost_bob, "BOB")}</TableCell> : null}
+                {visibleColumns.has("platform") ? (
+                  <TableCell className={responsiveAccountCellClassName}>
+                    <AccountMobileLabel>Plataforma</AccountMobileLabel>
+                    <span>{one(account.services)?.name ?? "-"}</span>
+                  </TableCell>
+                ) : null}
+                {visibleColumns.has("provider") ? (
+                  <TableCell className={responsiveAccountCellClassName}>
+                    <AccountMobileLabel>Proveedor</AccountMobileLabel>
+                    <span>{one(account.providers)?.name ?? "-"}</span>
+                  </TableCell>
+                ) : null}
+                {visibleColumns.has("purchase") ? (
+                  <TableCell className={responsiveAccountCellClassName}>
+                    <AccountMobileLabel>Compra</AccountMobileLabel>
+                    <span>{money(account.base_cost_usdt, "USDT")} / {money(account.base_cost_bob, "BOB")}</span>
+                  </TableCell>
+                ) : null}
                 {visibleColumns.has("renewal") ? (
-                  <TableCell>
+                  <TableCell className={responsiveAccountCellClassName}>
+                    <AccountMobileLabel>Próximo pago</AccountMobileLabel>
                     {isMother ? (
                       <div className="flex flex-col items-start gap-1">
                         <span>{formatDate(account.renewal_due_on)}</span>
@@ -558,10 +602,16 @@ export function AccountsTable({
                     )}
                   </TableCell>
                 ) : null}
-                {visibleColumns.has("duration") ? <TableCell>{durationText(account.started_at, account.dead_at)}</TableCell> : null}
+                {visibleColumns.has("duration") ? (
+                  <TableCell className={responsiveAccountCellClassName}>
+                    <AccountMobileLabel>Duración</AccountMobileLabel>
+                    <span>{durationText(account.started_at, account.dead_at)}</span>
+                  </TableCell>
+                ) : null}
                 {visibleColumns.has("status") ? (
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
+                  <TableCell className={responsiveAccountCellClassName}>
+                    <AccountMobileLabel>Estado</AccountMobileLabel>
+                    <div className="flex flex-wrap items-center gap-1">
                       <Badge variant="secondary">{account.status}</Badge>
                       {isAvailable ? (
                         <Badge variant="secondary">{isMother ? "Con cupos disponibles" : "Disponible sin cliente"}</Badge>
@@ -577,8 +627,8 @@ export function AccountsTable({
                   </TableCell>
                 ) : null}
                 {visibleColumns.has("actions") ? (
-                  <TableCell className="text-right">
-                    <div className="flex flex-wrap justify-end gap-2">
+                  <TableCell className={cn("col-span-2 border-t pt-2 xl:border-t-0 xl:pt-2", responsiveAccountCellClassName, "xl:text-right")}>
+                    <div className="flex flex-wrap items-center justify-between gap-2 xl:justify-end">
                       {isMother ? (
                         <Button
                           onClick={() => setExpandedSpotifyAccounts((current) =>
@@ -589,9 +639,9 @@ export function AccountsTable({
                           size="sm"
                           variant="outline"
                         >
-                          {isExpanded ? "Ocultar miembros" : "Ver miembros"}
+                          {isExpanded ? "Ocultar miembros" : `Ver miembros (${membersForAccount.length})`}
                         </Button>
-                      ) : null}
+                      ) : <div />}
                       <InventoryActions
                         account={account}
                         assignmentHref={
@@ -624,45 +674,74 @@ export function AccountsTable({
                   ? membersForAccount.map((client, memberIndex) => (
                       <motion.tr
                         animate={{ opacity: 1, y: 0 }}
-                        className="bg-muted/20"
+                        className={cn(responsiveMemberRowClassName, "xl:border-b last:xl:border-0")}
                         exit={{ opacity: 0, y: -4 }}
                         initial={{ opacity: 0, y: -4 }}
                         key={client.id}
                         transition={{ delay: memberIndex * 0.025, duration: 0.18 }}
                       >
                         {visibleColumns.has("account") ? (
-                          <TableCell>
-                            <div className="border-l-2 border-primary/30 pl-4">
-                              <div className="font-medium">
-                                {client.memberName || client.contact || "Miembro sin nombre"}
+                          <TableCell className={cn("col-span-2", responsiveAccountCellClassName)}>
+                            <div className="border-l-2 border-primary/50 pl-3">
+                              <div className="flex flex-wrap items-center gap-1.5 font-semibold text-foreground">
+                                <span className="font-mono text-sm text-primary font-bold">
+                                  {client.customerName || client.contact}
+                                </span>
+                                {client.memberName ? (
+                                  <span className="text-xs font-normal text-muted-foreground">
+                                    ({client.memberName})
+                                  </span>
+                                ) : null}
                               </div>
-                              {!client.memberName ? (
-                                <div className="text-xs text-muted-foreground">Sin nombre</div>
+                              {client.contact && client.contact !== client.customerName ? (
+                                <div className="break-all text-xs text-muted-foreground">
+                                  {client.contact}
+                                </div>
                               ) : null}
-                              <div className="text-sm">{client.customerName}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {client.contact}
-                              </div>
                             </div>
                           </TableCell>
                         ) : null}
-                        {visibleColumns.has("platform") ? <TableCell>Cliente Spotify</TableCell> : null}
-                        {visibleColumns.has("provider") ? <TableCell>{client.serviceAccountLabel}</TableCell> : null}
-                        {visibleColumns.has("purchase") ? <TableCell>-</TableCell> : null}
-                        {visibleColumns.has("renewal") ? <TableCell>{client.endsOn ? formatDate(client.endsOn) : "-"}</TableCell> : null}
+                        {visibleColumns.has("platform") ? (
+                          <TableCell className={responsiveAccountCellClassName}>
+                            <AccountMobileLabel>Plataforma</AccountMobileLabel>
+                            <span>Cliente Spotify</span>
+                          </TableCell>
+                        ) : null}
+                        {visibleColumns.has("provider") ? (
+                          <TableCell className={responsiveAccountCellClassName}>
+                            <AccountMobileLabel>Plan familiar</AccountMobileLabel>
+                            <span>{client.serviceAccountLabel}</span>
+                          </TableCell>
+                        ) : null}
+                        {visibleColumns.has("purchase") ? (
+                          <TableCell className={responsiveAccountCellClassName}>
+                            <AccountMobileLabel>Compra</AccountMobileLabel>
+                            <span>-</span>
+                          </TableCell>
+                        ) : null}
+                        {visibleColumns.has("renewal") ? (
+                          <TableCell className={responsiveAccountCellClassName}>
+                            <AccountMobileLabel>Vence</AccountMobileLabel>
+                            <span>{client.endsOn ? formatDate(client.endsOn) : "-"}</span>
+                          </TableCell>
+                        ) : null}
                         {visibleColumns.has("duration") ? (
-                          <TableCell>
-                            {client.durationMonths ? `${client.durationMonths} ${client.durationMonths === 1 ? "mes" : "meses"}` : "-"}
+                          <TableCell className={responsiveAccountCellClassName}>
+                            <AccountMobileLabel>Duración</AccountMobileLabel>
+                            <span>
+                              {client.durationMonths ? `${client.durationMonths} ${client.durationMonths === 1 ? "mes" : "meses"}` : "-"}
+                            </span>
                           </TableCell>
                         ) : null}
                         {visibleColumns.has("status") ? (
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
+                          <TableCell className={responsiveAccountCellClassName}>
+                            <AccountMobileLabel>Estado</AccountMobileLabel>
+                            <div className="flex flex-wrap gap-1">
                               <Badge variant={client.status === "removed" ? "destructive" : client.status === "available" ? "outline" : "secondary"}>
                                 {client.status === "removed"
                                   ? "Eliminado de Spotify"
                                   : client.status === "available"
-                                    ? "Disponible para reasignar · ocupa cupo"
+                                    ? "Disponible para reasignar"
                                     : "Asignado a cliente"}
                               </Badge>
                               <Badge variant="outline">
@@ -672,7 +751,7 @@ export function AccountsTable({
                           </TableCell>
                         ) : null}
                         {visibleColumns.has("actions") ? (
-                          <TableCell className="text-right">
+                          <TableCell className={cn("col-span-2 border-t pt-2 xl:border-t-0 xl:pt-2", responsiveAccountCellClassName, "xl:text-right")}>
                             <div className="flex justify-end">
                               {serviceSlug === "spotify" ? (
                                 <SpotifyMemberActions
@@ -696,9 +775,14 @@ export function AccountsTable({
                       </motion.tr>
                     ))
                   : (
-                    <motion.tr animate={{ opacity: 1 }} className="bg-muted/20" exit={{ opacity: 0 }} initial={{ opacity: 0 }}>
-                      <TableCell className="pl-8 text-sm text-muted-foreground" colSpan={visibleColumnCount}>
-                        Esta cuenta no tiene clientes activos.
+                    <motion.tr
+                      animate={{ opacity: 1 }}
+                      className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground xl:table-row xl:rounded-none xl:border-0 xl:bg-muted/20"
+                      exit={{ opacity: 0 }}
+                      initial={{ opacity: 0 }}
+                    >
+                      <TableCell className="text-center xl:text-left xl:pl-8" colSpan={visibleColumnCount}>
+                        Esta cuenta no tiene miembros registrados.
                       </TableCell>
                     </motion.tr>
                   )

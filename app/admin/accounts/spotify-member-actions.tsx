@@ -599,7 +599,9 @@ export function SpotifyMemberActions({
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Editar miembro Spotify</DialogTitle>
-            <DialogDescription>Actualiza las credenciales que se usarán para acceder a la cuenta.</DialogDescription>
+            <DialogDescription>
+              Si cambias el correo, el anterior conservará su historial y el nuevo quedará como acceso activo.
+            </DialogDescription>
           </DialogHeader>
           <form action={editAction}>
             <FieldGroup>
@@ -653,7 +655,7 @@ export function SpotifyMemberActions({
                 </Alert>
               ) : null}
               <FormSubmitButton pendingLabel="Guardando cambios...">
-                Guardar cambios
+                Guardar y conservar historial
               </FormSubmitButton>
             </FieldGroup>
           </form>

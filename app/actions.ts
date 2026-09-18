@@ -1059,6 +1059,58 @@ export async function updateManagedEmail(
   return { message: "Correo actualizado." }
 }
 
+export async function deleteEmailWithRelations(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const emailId = requireValue(formData.get("id"), "Correo")
+
+  // Fetch the email to get its address
+  const { data: emailRecord, error: fetchError } = await supabase
+    .from("email_addresses")
+    .select("id, email")
+    .eq("id", emailId)
+    .single()
+
+  if (fetchError || !emailRecord) {
+    throw new Error("El correo no existe o ya fue eliminado")
+  }
+
+  const emailNorm = emailRecord.email.trim().toLowerCase()
+
+  // 1. Remove related Spotify member records for this email
+  await supabase
+    .from("spotify_member_accounts")
+    .delete()
+    .ilike("login_email", emailNorm)
+
+  // 2. Unlink any service accounts referencing this email address
+  await supabase
+    .from("service_accounts")
+    .update({ email_address_id: null })
+    .eq("email_address_id", emailId)
+
+  // 3. Remove email usages for this email_address_id
+  await supabase
+    .from("email_usages")
+    .delete()
+    .eq("email_address_id", emailId)
+
+  // 4. Delete the email address record
+  const { error: deleteError } = await supabase
+    .from("email_addresses")
+    .delete()
+    .eq("id", emailId)
+
+  if (deleteError) {
+    throw new Error(deleteError.message ?? "No se pudo eliminar el correo")
+  }
+
+  revalidatePath("/admin/email-history")
+  revalidatePath("/admin/emails")
+  revalidatePath("/admin/subscriptions")
+  revalidateAccountPages()
+  return { message: "Correo y sus plataformas asociadas eliminados correctamente." }
+}
+
 export async function createServiceAccount(formData: FormData) {
   const { supabase } = await requireAdmin()
   const amount = formNumber(formData.get("base_cost_amount"))
@@ -2584,55 +2636,22 @@ export async function updateSpotifyMember(formData: FormData) {
   const emailPassword = formText(formData.get("email_password"))
   const profileLabel = formText(formData.get("profile_label"))
 
-  const { data: member, error: memberError } = await supabase
-    .from("spotify_member_accounts")
-    .select("id, status, current_subscription_id")
-    .eq("id", id)
-    .single()
-  if (memberError || !member) throw memberError ?? new Error("El miembro Spotify no existe")
-  if (member.status === "removed") {
-    throw new Error("El miembro Spotify fue eliminado y no puede editarse")
-  }
-
-  if (member.current_subscription_id) {
-    const { data: access, error: accessError } = await supabase
-      .from("subscription_access_details")
-      .update({
-        login_email: loginEmail,
-        login_password: loginPassword,
-        email_password: emailPassword,
-        profile_label: profileLabel,
-      })
-      .eq("subscription_id", member.current_subscription_id)
-      .select("subscription_id")
-      .maybeSingle()
-    if (accessError) throw accessError
-    if (!access) throw new Error("No se encontraron los datos de acceso de la suscripción")
-
-    await insertOrThrow(
-      supabase
-        .from("spotify_member_accounts")
-        .update({ member_name: memberName })
-        .eq("id", id)
-    )
-  } else {
-    await insertOrThrow(
-      supabase
-        .from("spotify_member_accounts")
-        .update({
-          login_email: loginEmail,
-          login_password: loginPassword,
-          email_password: emailPassword,
-          member_name: memberName,
-        })
-        .eq("id", id)
-    )
-  }
+  const { error } = await supabase.rpc("update_spotify_member_credentials", {
+    p_member_id: id,
+    p_login_email: loginEmail,
+    p_login_password: loginPassword,
+    p_email_password: emailPassword,
+    p_member_name: memberName,
+    p_profile_label: profileLabel,
+  })
+  if (error) throw new Error(error.message)
 
   revalidatePath("/admin/accounts")
   revalidatePath("/admin/subscriptions")
   revalidatePath("/admin")
   revalidatePath("/admin/emails")
+  revalidatePath("/admin/email-history")
+  revalidatePath("/admin/account-history")
   revalidatePath("/portal")
 }
 
@@ -2663,6 +2682,51 @@ export async function moveSpotifyMember(formData: FormData) {
   revalidatePath("/admin/emails")
   revalidatePath("/admin/payments")
   revalidatePath("/portal")
+}
+
+export async function rotateSpotifyMotherAccount(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const amount = formNumber(formData.get("base_cost_amount"))
+  const costCurrency = currency(formData.get("base_cost_currency"))
+  let rate = formNumber(formData.get("base_cost_exchange_rate"))
+  if (amount > 0 && !rate) {
+    const result = await fetchBinanceAverage("BUY")
+    rate = result.average
+    await insertOrThrow(
+      supabase.from("exchange_rate_snapshots").insert({
+        trade_type: "BUY",
+        rows_requested: 20,
+        average_price: result.average,
+        raw_ads: result.ads,
+      })
+    )
+  }
+  const moneyValues = toMoneyValues(amount, costCurrency, rate || undefined)
+  const renewalDueOn = calendarDate(formData.get("renewal_due_on"), "Próximo pago")
+  const seatCapacity = formNumber(formData.get("seat_capacity"), 6)
+
+  const { error } = await supabase.rpc("rotate_spotify_mother_account", {
+    p_source_account_id: requireValue(formData.get("source_account_id"), "Cuenta origen"),
+    p_new_mother_member_id: requireValue(formData.get("new_mother_member_id"), "Miembro destino"),
+    p_label: requireValue(formData.get("label"), "Etiqueta"),
+    p_provider_id: optionalId(formData.get("provider_id")),
+    p_base_cost_amount: amount,
+    p_base_cost_currency: costCurrency,
+    p_base_cost_exchange_rate: rate || null,
+    p_base_cost_bob: moneyValues.bob,
+    p_base_cost_usdt: moneyValues.usdt,
+    p_renewal_due_on: renewalDueOn,
+    p_seat_capacity: seatCapacity,
+    p_invite_url: formText(formData.get("invite_url")),
+    p_address: formText(formData.get("address")),
+  })
+  if (error) throw new Error(error.message)
+
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/subscriptions")
+  revalidatePath("/admin")
+  revalidatePath("/admin/emails")
+  revalidatePath("/admin/email-history")
 }
 
 export async function promoteSpotifyMemberToMother(formData: FormData) {

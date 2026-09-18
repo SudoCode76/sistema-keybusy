@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  rotateSpotifyMotherAccount,
   demoteSpotifyMotherToMembers,
   createCost,
   deleteServiceAccount,
@@ -204,6 +205,8 @@ export function InventoryActions({
   const [renewOpen, setRenewOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [convertOpen, setConvertOpen] = useState(false)
+  const [rotateOpen, setRotateOpen] = useState(false)
+  const [newMotherMemberId, setNewMotherMemberId] = useState("")
   const [conversionTargets, setConversionTargets] = useState<Record<string, string>>({})
   const spotifyPlan = one(account.spotify_family_plans)
   const isSpotify = one(account.services)?.slug === "spotify"
@@ -260,16 +263,22 @@ export function InventoryActions({
               </>
             ) : null}
             {isSpotifyMother && account.status === "active" ? (
-              <DropdownMenuItem
-                onClick={() => {
-                  setConversionTargets(
-                    Object.fromEntries(activeConversionClients.map((client) => [client.currentSubscriptionId as string, ""]))
-                  )
-                  setConvertOpen(true)
-                }}
-              >
-                Convertir en miembros
-              </DropdownMenuItem>
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setRotateOpen(true)}>
+                  Reemplazar cuenta madre
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setConversionTargets(
+                      Object.fromEntries(activeConversionClients.map((client) => [client.currentSubscriptionId as string, ""]))
+                    )
+                    setConvertOpen(true)
+                  }}
+                >
+                  Convertir en miembros
+                </DropdownMenuItem>
+              </>
             ) : null}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
@@ -278,6 +287,128 @@ export function InventoryActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <Dialog open={rotateOpen} onOpenChange={setRotateOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Reemplazar cuenta madre (Spotify)</DialogTitle>
+            <DialogDescription>
+              Uno de los miembros actuales pasará a ser la nueva cuenta madre del plan. El antiguo titular quedará como miembro. Todos conservan sus fechas y pagos.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (event) => {
+              event.preventDefault()
+              setConversionPending(true)
+              setConversionState({})
+              try {
+                const formData = new FormData(event.currentTarget)
+                await rotateSpotifyMotherAccount(formData)
+                setRotateOpen(false)
+              } catch (error) {
+                setConversionState({
+                  error: error instanceof Error ? error.message : "No se pudo reemplazar la cuenta madre",
+                })
+              } finally {
+                setConversionPending(false)
+              }
+            }}
+          >
+            <FieldGroup>
+              <input name="source_account_id" type="hidden" value={account.id} />
+              
+              <Field>
+                <FieldLabel>Selecciona el miembro que será la nueva cuenta madre</FieldLabel>
+                <Select value={newMotherMemberId} onValueChange={(val) => setNewMotherMemberId(val || "")} name="new_mother_member_id" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar miembro..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeConversionClients.filter(c => c.id).map(client => (
+                      <SelectItem key={client.id} value={client.id}>
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">{client.memberName || client.customerName || "Miembro"}</span>
+                          <span className="text-xs text-muted-foreground">{client.loginEmail || client.contact || "Sin correo"}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor={`spotify_rotate_label_${account.id}`}>Etiqueta del nuevo plan</FieldLabel>
+                <Input defaultValue={account.label ? `${account.label} (Nuevo)` : "Plan Spotify"} id={`spotify_rotate_label_${account.id}`} name="label" required />
+              </Field>
+
+              <Field>
+                <FieldLabel>Proveedor (Opcional)</FieldLabel>
+                <Select defaultValue={account.provider_id ?? "none"} name="provider_id">
+                  <SelectTrigger><SelectValue placeholder="Sin proveedor" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin proveedor</SelectItem>
+                    {providers.map((provider) => <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`spotify_rotate_cost_${account.id}`}>Costo base</FieldLabel>
+                  <Input defaultValue={account.base_cost_amount ?? "0"} id={`spotify_rotate_cost_${account.id}`} min="0" name="base_cost_amount" step="0.01" type="number" />
+                </Field>
+                <Field>
+                  <FieldLabel>Moneda</FieldLabel>
+                  <Select defaultValue={account.base_cost_currency ?? "USDT"} name="base_cost_currency">
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="USDT">USDT</SelectItem><SelectItem value="BOB">BOB</SelectItem></SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+              <Field>
+                <FieldLabel htmlFor={`spotify_rotate_rate_${account.id}`}>Tipo de cambio</FieldLabel>
+                <Input defaultValue={account.base_cost_exchange_rate ?? ""} id={`spotify_rotate_rate_${account.id}`} min="0" name="base_cost_exchange_rate" step="0.000001" type="number" />
+              </Field>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`spotify_rotate_renewal_${account.id}`}>Próximo pago al proveedor</FieldLabel>
+                  <Input defaultValue={account.renewal_due_on ?? ""} id={`spotify_rotate_renewal_${account.id}`} name="renewal_due_on" required type="date" />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`spotify_rotate_seats_${account.id}`}>Cupos de familia</FieldLabel>
+                  <Input defaultValue={account.seat_capacity ?? "6"} id={`spotify_rotate_seats_${account.id}`} min={activeConversionClients.length + 1} name="seat_capacity" required type="number" />
+                </Field>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field><FieldLabel htmlFor={`spotify_rotate_invite_${account.id}`}>Link de invitación (Nuevo)</FieldLabel><Input id={`spotify_rotate_invite_${account.id}`} name="invite_url" /></Field>
+                <Field><FieldLabel htmlFor={`spotify_rotate_address_${account.id}`}>Dirección</FieldLabel><Input defaultValue={spotifyPlan?.address ?? ""} id={`spotify_rotate_address_${account.id}`} name="address" /></Field>
+              </div>
+
+              <Alert variant="default" className="bg-muted/50">
+                <AlertTitle className="font-medium text-amber-600 dark:text-amber-500">Aviso sobre la regla de 12 meses</AlertTitle>
+                <AlertDescription className="text-xs text-muted-foreground mt-1">
+                  Si un miembro formó parte de otro plan familiar hace menos de 12 meses, Spotify podría no permitirle unirse a este nuevo enlace. En ese caso se requerirá que cambie de cuenta o apele a soporte. Esta operación de reemplazo archiva automáticamente el plan actual.
+                </AlertDescription>
+              </Alert>
+
+              {conversionState.error ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Error en la operación</AlertTitle>
+                  <AlertDescription>{conversionState.error}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <Button onClick={() => setRotateOpen(false)} type="button" variant="outline">Cancelar</Button>
+                <FormSubmitButton disabled={!newMotherMemberId} pendingLabel="Procesando...">Reemplazar cuenta</FormSubmitButton>
+              </div>
+            </FieldGroup>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
