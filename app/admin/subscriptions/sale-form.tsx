@@ -56,6 +56,7 @@ import {
   spotifyPlanUnavailable as isSpotifyPlanUnavailable,
   type SpotifySeatType,
 } from "./spotify-seats"
+import { addRenewalMonths } from "./renewal-dates"
 export type ProductOption = {
   id: string
   serviceId: string
@@ -427,6 +428,9 @@ function SaleFormBody({
       initialValues?.durationMonths ?? selectedProduct?.defaultDurationMonths ?? 1
     )
   )
+  const [startDate, setStartDate] = useState(
+    initialValues?.startsOn ?? todayDate()
+  )
   const [price, setPrice] = useState(
     String(initialValues?.priceAmount ?? selectedProduct?.defaultPriceAmount ?? 0)
   )
@@ -533,7 +537,11 @@ function SaleFormBody({
       accountMode === "new" &&
       managedEmailMode === "new"
     )
-  const defaultStartDate = initialValues?.startsOn ?? todayDate()
+  const durationMonths = Number.parseInt(duration, 10)
+  const cutoffDate =
+    startDate && Number.isFinite(durationMonths) && durationMonths > 0
+      ? addRenewalMonths(startDate, durationMonths)
+      : null
   const accountEmail = loginEmail.trim() || invitationEmail.trim()
   const normalizedTelegram = normalizeTelegramUsername(telegramUsername)
   const telegramInvalid =
@@ -1472,10 +1480,11 @@ function SaleFormBody({
             <Field>
               <FieldLabel htmlFor="starts_on">Inicio</FieldLabel>
               <Input
-                defaultValue={defaultStartDate}
                 id="starts_on"
                 name="starts_on"
                 type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
               />
             </Field>
             <Field>
@@ -1488,6 +1497,9 @@ function SaleFormBody({
                 value={duration}
                 onChange={(event) => setDuration(event.target.value)}
               />
+              <FieldDescription>
+                Fecha de corte: {cutoffDate ? formatDate(cutoffDate) : "-"}
+              </FieldDescription>
             </Field>
             {createsInventoryOnSale ? null : salePricingFields}
           </FieldGroup>
