@@ -423,7 +423,7 @@ export default async function ServicesPage() {
                         <form action={setProductStatus}>
                           <input name="id" type="hidden" value={product.id} />
                           <input name="status" type="hidden" value={nextStatus} />
-                          <Button size="sm" variant={nextStatus === "inactive" ? "destructive" : "outline"}>
+                          <Button size="sm" type="submit" variant={nextStatus === "inactive" ? "destructive" : "outline"}>
                             {nextStatus === "inactive" ? "Desactivar" : "Reactivar"}
                           </Button>
                         </form>
