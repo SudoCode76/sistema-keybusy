@@ -25,6 +25,8 @@ export function SubscriptionsManager({
   countries,
   defaultCountryId,
   initialActiveTotal,
+  initialSalesBob,
+  initialSalesUsdt,
   initialRows,
   initialTotal,
   platforms,
@@ -38,6 +40,8 @@ export function SubscriptionsManager({
   countries: CountryOption[]
   defaultCountryId?: string
   initialActiveTotal: number
+  initialSalesBob: number
+  initialSalesUsdt: number
   initialRows: SubscriptionRow[]
   initialTotal: number
   platforms: { slug: string; name: string }[]
@@ -87,6 +91,8 @@ export function SubscriptionsManager({
           countries={countries}
           defaultCountryId={defaultCountryId}
           initialActiveTotal={initialActiveTotal}
+          initialSalesBob={initialSalesBob}
+          initialSalesUsdt={initialSalesUsdt}
           initialRows={initialRows}
           initialTotal={initialTotal}
           onPlatformChange={setPlatform}

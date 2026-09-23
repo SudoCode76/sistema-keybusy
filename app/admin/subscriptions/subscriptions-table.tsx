@@ -118,6 +118,8 @@ export function SubscriptionsTable({
   initialRows,
   initialTotal,
   initialActiveTotal,
+  initialSalesBob,
+  initialSalesUsdt,
   platform,
   platforms,
   onPlatformChange,
@@ -131,6 +133,8 @@ export function SubscriptionsTable({
   initialRows: SubscriptionRow[]
   initialTotal: number
   initialActiveTotal: number
+  initialSalesBob: number
+  initialSalesUsdt: number
   platform: string
   platforms: { slug: string; name: string }[]
   onPlatformChange: (platform: string) => void
@@ -148,6 +152,8 @@ export function SubscriptionsTable({
   const [rows, setRows] = useState(initialRows)
   const [total, setTotal] = useState(initialTotal)
   const [activeTotal, setActiveTotal] = useState(initialActiveTotal)
+  const [salesBob, setSalesBob] = useState(initialSalesBob)
+  const [salesUsdt, setSalesUsdt] = useState(initialSalesUsdt)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const firstLoad = useRef(true)
@@ -180,10 +186,14 @@ export function SubscriptionsTable({
           rows: SubscriptionRow[]
           total: number
           activeTotal: number
+          salesBob: number
+          salesUsdt: number
         }
         setRows(result.rows)
         setTotal(result.total)
         setActiveTotal(result.activeTotal)
+        setSalesBob(result.salesBob)
+        setSalesUsdt(result.salesUsdt)
       } catch {
         if (!controller.signal.aborted) setError("No se pudieron cargar los accesos.")
       } finally {
@@ -253,9 +263,14 @@ export function SubscriptionsTable({
             ))}
           </TabsList>
         </Tabs>
-        <Badge className="self-start xl:self-auto" variant="secondary">
-          Accesos activos: {activeTotal}
-        </Badge>
+        <div className="flex flex-wrap gap-2">
+          <Badge className="self-start xl:self-auto" variant="secondary">
+            Accesos activos: {activeTotal}
+          </Badge>
+          <Badge className="self-start xl:self-auto" variant="secondary">
+            Ventas registradas: {money(salesBob, "BOB")} · {money(salesUsdt, "USDT")}
+          </Badge>
+        </div>
       </div>
       <Table className="block w-full xl:table xl:min-w-[60rem]">
         <TableHeader className="hidden xl:table-header-group">
@@ -313,9 +328,11 @@ export function SubscriptionsTable({
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <div className="min-w-0">
                         <span className="break-all">
-                          {item.detail?.login_email ?? item.accountLabel ?? item.slotLabel ?? "-"}
+                          {item.serviceSlug === "chatgpt-shared"
+                            ? item.accountLabel ?? "Cuenta madre"
+                            : item.detail?.login_email ?? item.accountLabel ?? item.slotLabel ?? "-"}
                         </span>
-                        {item.serviceSlug === "spotify" && item.account?.login_email ? (
+                        {(item.serviceSlug === "spotify" || item.serviceSlug === "chatgpt-shared") && item.account?.login_email ? (
                           <span className="block break-all text-xs text-muted-foreground">
                             {item.account.login_email}
                           </span>

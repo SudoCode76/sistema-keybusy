@@ -261,6 +261,8 @@ export default async function SubscriptionsPage({
           countries?.find((country) => country.iso2 === "BO")?.id
         }
         initialActiveTotal={initialPage.activeTotal}
+        initialSalesBob={initialPage.salesBob}
+        initialSalesUsdt={initialPage.salesUsdt}
         initialRows={initialPage.rows}
         initialTotal={initialPage.total}
         platforms={platforms}

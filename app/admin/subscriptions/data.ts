@@ -13,9 +13,40 @@ import {
 type ServerClient = Awaited<ReturnType<typeof createClient>>
 
 export const SUBSCRIPTIONS_PAGE_SIZE = 20
+const SALES_TOTALS_BATCH_SIZE = 1000
 
 function one<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? value[0] ?? null : value
+}
+
+async function getSalesTotals(
+  supabase: ServerClient,
+  productIds: string[] | null
+) {
+  let bob = 0
+  let usdt = 0
+
+  for (let from = 0; ; from += SALES_TOTALS_BATCH_SIZE) {
+    let query = supabase
+      .from("subscriptions")
+      .select("current_price_amount, current_price_currency, duration_months")
+      .not("status", "in", "(canceled,inactive)")
+      .range(from, from + SALES_TOTALS_BATCH_SIZE - 1)
+    if (productIds) query = query.in("product_id", productIds)
+
+    const { data, error } = await query
+    if (error) throw error
+
+    for (const sale of data ?? []) {
+      const amount = Number(sale.current_price_amount ?? 0) * (sale.duration_months ?? 1)
+      if (sale.current_price_currency === "USDT") usdt += amount
+      else bob += amount
+    }
+
+    if (!data || data.length < SALES_TOTALS_BATCH_SIZE) break
+  }
+
+  return { salesBob: bob, salesUsdt: usdt }
 }
 
 export async function getSubscriptionsPage(
@@ -62,7 +93,13 @@ export async function getSubscriptionsPage(
     productIds = (platformProducts ?? []).map((product) => product.id)
 
     if (productIds.length === 0) {
-      return { rows: [] as SubscriptionRow[], total: 0, activeTotal: 0 }
+      return {
+        rows: [] as SubscriptionRow[],
+        total: 0,
+        activeTotal: 0,
+        salesBob: 0,
+        salesUsdt: 0,
+      }
     }
     subscriptionQuery = subscriptionQuery.in("product_id", productIds)
   }
@@ -77,6 +114,7 @@ export async function getSubscriptionsPage(
     if (error) throw error
     return count ?? 0
   })
+  const salesTotalsPromise = getSalesTotals(supabase, productIds)
 
   const search = query.replace(/[(),%]/g, "").trim()
   if (search) {
@@ -123,17 +161,19 @@ export async function getSubscriptionsPage(
         rows: [] as SubscriptionRow[],
         total: 0,
         activeTotal: await activeTotalPromise,
+        ...await salesTotalsPromise,
       }
     }
     subscriptionQuery = subscriptionQuery.or(filters.join(","))
   }
 
   const from = (Math.max(1, page) - 1) * SUBSCRIPTIONS_PAGE_SIZE
-  const [{ data: subscriptions, count, error }, activeTotal] = await Promise.all([
+  const [{ data: subscriptions, count, error }, activeTotal, salesTotals] = await Promise.all([
     subscriptionQuery
       .order("ends_on")
       .range(from, from + SUBSCRIPTIONS_PAGE_SIZE - 1),
     activeTotalPromise,
+    salesTotalsPromise,
   ])
 
   if (error) throw error
@@ -289,5 +329,5 @@ export async function getSubscriptionsPage(
     }
   })
 
-  return { rows, total: count ?? 0, activeTotal }
+  return { rows, total: count ?? 0, activeTotal, ...salesTotals }
 }
