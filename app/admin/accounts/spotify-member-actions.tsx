@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select"
 import { formatDate } from "@/lib/date"
 import { FormSubmitButton } from "./form-submit-button"
+import { CopyAccountDataItem } from "./copy-account-data-item"
 
 function CopyValue({ label, value }: { label: string; value: string | null }) {
   const [copied, setCopied] = useState(false)
@@ -65,12 +66,14 @@ function CopyValue({ label, value }: { label: string; value: string | null }) {
 export function SpotifyMemberActions({
   accountId,
   currentPlanEmail,
+  platformName,
   member,
   providers,
   targetPlans,
 }: {
   accountId: string
   currentPlanEmail: string | null
+  platformName: string
   providers: Array<{ id: string; name: string }>
   targetPlans: Array<{
     id: string
@@ -212,6 +215,12 @@ export function SpotifyMemberActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-48">
           <DropdownMenuGroup>
+            <CopyAccountDataItem
+              cutoffDate={member.endsOn}
+              email={member.loginEmail}
+              password={member.loginPassword}
+              platform={platformName}
+            />
             <DropdownMenuItem onClick={() => setViewOpen(true)}>
               Ver cuenta
             </DropdownMenuItem>

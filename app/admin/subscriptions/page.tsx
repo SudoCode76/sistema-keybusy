@@ -50,14 +50,14 @@ export default async function SubscriptionsPage({
     supabase
       .from("products")
       .select(
-        "id, slug, name, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, allow_account_reuse_on_cancel, is_default, services(id, slug, name, account_model, default_seat_capacity)"
+        "id, slug, name, default_duration_months, default_price_amount, default_price_currency, default_exchange_rate, purchase_mode, access_fields, default_purchase_amount, default_purchase_currency, default_purchase_exchange_rate, allow_account_reuse_on_cancel, is_default, services(id, slug, name, delivery_name, account_model, default_seat_capacity)"
       )
       .eq("status", "active")
       .order("name"),
     supabase
       .from("service_accounts")
       .select(
-        "id, label, login_email, renewal_due_on, seat_capacity, services(slug, name, account_model), spotify_family_plans(seats_total)"
+        "id, label, login_email, renewal_due_on, seat_capacity, services(slug, name, delivery_name, account_model), spotify_family_plans(seats_total)"
       )
       .eq("status", "active")
       .order("label"),
@@ -147,6 +147,7 @@ export default async function SubscriptionsPage({
         slug: product.slug,
         name: product.name,
         serviceName: service?.name ?? "Servicio",
+        serviceDeliveryName: service?.delivery_name ?? service?.name ?? "Servicio",
         serviceSlug: service?.slug ?? "",
         accountModel: service?.account_model === "mother" ? ("mother" as const) : ("private" as const),
         defaultDurationMonths: product.default_duration_months ?? 1,

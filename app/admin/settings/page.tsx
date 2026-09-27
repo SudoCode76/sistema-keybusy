@@ -3,6 +3,7 @@ import { ArrowLeftIcon, EyeIcon, Settings2Icon } from "lucide-react"
 
 import {
   setProductAccountReuse,
+  setServiceDeliveryName,
   setServiceInventoryTabVisibility,
 } from "@/app/actions"
 import { FormSubmitButton } from "@/app/admin/accounts/form-submit-button"
@@ -22,7 +23,7 @@ export default async function SettingsPage() {
   const { data: services, error } = await supabase
     .from("services")
     .select(
-      "id, name, slug, status, show_in_inventory_tabs, products(id, name, purchase_mode, allow_account_reuse_on_cancel, status)"
+      "id, name, slug, delivery_name, status, show_in_inventory_tabs, products(id, name, purchase_mode, allow_account_reuse_on_cancel, status)"
     )
     .eq("status", "active")
     .order("name")
@@ -57,6 +58,44 @@ export default async function SettingsPage() {
           </Button>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Nombres para copiar datos de cuenta</CardTitle>
+          <CardDescription>
+            Define el nombre de cada plataforma que se incluye al copiar los datos para compartirlos.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="divide-y rounded-xl border">
+            {(services ?? []).map((service) => (
+              <form
+                action={setServiceDeliveryName}
+                className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end"
+                key={service.id}
+              >
+                <input name="id" type="hidden" value={service.id} />
+                <div className="min-w-0 flex-1">
+                  <label className="mb-1 block text-sm font-medium" htmlFor={`delivery-name-${service.id}`}>
+                    {service.name}
+                  </label>
+                  <input
+                    className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                    defaultValue={service.delivery_name ?? service.name}
+                    id={`delivery-name-${service.id}`}
+                    maxLength={80}
+                    name="delivery_name"
+                    required
+                  />
+                </div>
+                <FormSubmitButton pendingLabel="Guardando..." size="sm" variant="outline">
+                  Guardar
+                </FormSubmitButton>
+              </form>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

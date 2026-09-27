@@ -9,6 +9,7 @@ import {
 } from "@/app/admin/accounts/inventory-actions"
 import { SpotifyMemberActions } from "@/app/admin/accounts/spotify-member-actions"
 import { CancelSaleAction } from "@/app/admin/accounts/cancel-sale-action"
+import { CopyAccountDataItem } from "@/app/admin/accounts/copy-account-data-item"
 import { isAccountAvailable } from "@/app/admin/accounts/account-availability"
 import {
   accountMatchesSearch,
@@ -58,7 +59,7 @@ import {
   boliviaToday,
   renewalOverdue,
 } from "@/app/admin/subscriptions/mother-access"
-import { CheckIcon, CopyIcon, Settings2Icon } from "lucide-react"
+import { CheckIcon, CopyIcon, MoreHorizontalIcon, Settings2Icon } from "lucide-react"
 
 type Nested<T> = T | T[] | null | undefined
 
@@ -88,6 +89,7 @@ type Account = {
   services?: Nested<{
     name: string | null
     slug: string | null
+    delivery_name?: string | null
     account_model: "private" | "mother"
     products?: Array<{
       slug: string
@@ -124,6 +126,7 @@ type ServiceOption = {
   id: string
   name: string
   slug: string
+  delivery_name?: string | null
   account_model: "private" | "mother"
   default_seat_capacity: number | null
   show_in_inventory_tabs?: boolean | null
@@ -856,18 +859,37 @@ export function AccountsTable({
                                 <SpotifyMemberActions
                                   accountId={account.id}
                                   currentPlanEmail={account.login_email}
+                                  platformName={one(account.services)?.delivery_name ?? one(account.services)?.name ?? "Servicio"}
                                   member={client}
                                   providers={providers}
                                   targetPlans={spotifyFamilyPlans}
                                 />
-                              ) : client.currentSubscriptionId ? (
-                                <CancelSaleAction
-                                  accountIsMother
-                                  allowAccountReuseOnCancel={client.allowAccountReuseOnCancel}
-                                  saleLabel={client.customerName}
-                                  subscriptionId={client.currentSubscriptionId}
-                                />
-                              ) : null}
+                              ) : (
+                                <>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+                                      <MoreHorizontalIcon data-icon="inline-start" />
+                                      Opciones
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <CopyAccountDataItem
+                                        cutoffDate={client.endsOn}
+                                        email={client.loginEmail ?? client.contact}
+                                        password={client.loginPassword}
+                                        platform={one(account.services)?.delivery_name ?? one(account.services)?.name ?? "Servicio"}
+                                      />
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                  {client.currentSubscriptionId ? (
+                                    <CancelSaleAction
+                                      accountIsMother
+                                      allowAccountReuseOnCancel={client.allowAccountReuseOnCancel}
+                                      saleLabel={client.customerName}
+                                      subscriptionId={client.currentSubscriptionId}
+                                    />
+                                  ) : null}
+                                </>
+                              )}
                             </div>
                           </TableCell>
                         ) : null}

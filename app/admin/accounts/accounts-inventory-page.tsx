@@ -38,11 +38,11 @@ export async function AccountsInventoryPage({
     await Promise.all([
       supabase
         .from("service_accounts")
-        .select("id, service_id, provider_id, email_address_id, label, login_email, username, status, started_at, dead_at, replacement_account_id, base_cost_amount, base_cost_currency, base_cost_exchange_rate, base_cost_usdt, base_cost_bob, renewal_due_on, seat_capacity, two_factor_url, notes, services(name, slug, account_model, default_seat_capacity, products(slug, purchase_mode, is_default)), providers(name), email_addresses(email, email_password, origin, provider_id), spotify_family_plans(invite_url, address, seats_total), account_credentials(secret_payload)")
+        .select("id, service_id, provider_id, email_address_id, label, login_email, username, status, started_at, dead_at, replacement_account_id, base_cost_amount, base_cost_currency, base_cost_exchange_rate, base_cost_usdt, base_cost_bob, renewal_due_on, seat_capacity, two_factor_url, notes, services(name, slug, delivery_name, account_model, default_seat_capacity, products(slug, purchase_mode, is_default)), providers(name), email_addresses(email, email_password, origin, provider_id), spotify_family_plans(invite_url, address, seats_total), account_credentials(secret_payload)")
         .order("created_at", { ascending: false }),
       supabase
         .from("services")
-        .select("id, name, slug, account_model, default_seat_capacity, show_in_inventory_tabs, products(slug, purchase_mode, is_default)")
+        .select("id, name, slug, delivery_name, account_model, default_seat_capacity, show_in_inventory_tabs, products(slug, purchase_mode, is_default)")
         .eq("status", "active")
         .eq("account_model", accountModel)
         .order("name"),
@@ -53,12 +53,12 @@ export async function AccountsInventoryPage({
         .order("name"),
       supabase
         .from("subscriptions")
-        .select("id, service_account_id, spotify_member_account_id, status, starts_on, ends_on, duration_months, slot_label, products(slug, name, purchase_mode, allow_account_reuse_on_cancel), customers(display_name, phone, phone_e164, email, telegram_username), subscription_access_details(login_email, login_password, email_password, profile_label), service_accounts(label)")
+        .select("id, service_account_id, spotify_member_account_id, status, starts_on, ends_on, duration_months, slot_label, products(slug, name, purchase_mode, allow_account_reuse_on_cancel), customers(display_name, phone, phone_e164, email, telegram_username), subscription_access_details(login_email, login_password, email_password, profile_label), service_accounts(label), billing_cycles(period_end, extra_days)")
         .eq("status", "active")
         .not("service_account_id", "is", null),
       supabase
         .from("spotify_member_accounts")
-        .select("id, service_account_id, source_subscription_id, current_subscription_id, login_email, login_password, email_password, member_name, status, created_at, updated_at, source_subscription:subscriptions!spotify_member_accounts_source_subscription_id_fkey(customers(display_name, phone, phone_e164, email, telegram_username), starts_on, ends_on, duration_months, status, products(purchase_mode, allow_account_reuse_on_cancel), subscription_access_details(login_email, login_password, email_password, profile_label)), current_subscription:subscriptions!spotify_member_accounts_current_subscription_id_fkey(customers(display_name, phone, phone_e164, email, telegram_username), starts_on, ends_on, duration_months, status, products(purchase_mode, allow_account_reuse_on_cancel), subscription_access_details(login_email, login_password, email_password, profile_label))")
+        .select("id, service_account_id, source_subscription_id, current_subscription_id, login_email, login_password, email_password, member_name, status, created_at, updated_at, source_subscription:subscriptions!spotify_member_accounts_source_subscription_id_fkey(customers(display_name, phone, phone_e164, email, telegram_username), starts_on, ends_on, duration_months, status, products(purchase_mode, allow_account_reuse_on_cancel), subscription_access_details(login_email, login_password, email_password, profile_label), billing_cycles(period_end, extra_days)), current_subscription:subscriptions!spotify_member_accounts_current_subscription_id_fkey(customers(display_name, phone, phone_e164, email, telegram_username), starts_on, ends_on, duration_months, status, products(purchase_mode, allow_account_reuse_on_cancel), subscription_access_details(login_email, login_password, email_password, profile_label), billing_cycles(period_end, extra_days))")
         .order("created_at"),
     ])
 
@@ -104,6 +104,7 @@ export async function AccountsInventoryPage({
       startsOn: sale.starts_on,
       endsOn: sale.ends_on,
       durationMonths: sale.duration_months,
+      extraDays: one(sale.billing_cycles?.find((cycle) => cycle.period_end === sale.ends_on) ?? null)?.extra_days ?? 0,
       status: "assigned",
       hasActiveSale: true,
     }]
@@ -158,6 +159,11 @@ export async function AccountsInventoryPage({
       startsOn: hasCurrentSale ? currentSale?.starts_on ?? null : null,
       endsOn: hasCurrentSale ? currentSale?.ends_on ?? null : null,
       durationMonths: hasCurrentSale ? currentSale?.duration_months ?? null : null,
+      extraDays: hasCurrentSale
+        ? one(currentSale?.billing_cycles?.find(
+            (cycle) => cycle.period_end === currentSale.ends_on
+          ) ?? null)?.extra_days ?? 0
+        : 0,
       status: member.status,
       hasActiveSale: hasCurrentSale,
     }
@@ -189,6 +195,7 @@ export async function AccountsInventoryPage({
         startsOn: sale.starts_on,
         endsOn: sale.ends_on,
         durationMonths: sale.duration_months,
+        extraDays: one(sale.billing_cycles)?.extra_days ?? 0,
         status: "assigned",
         hasActiveSale: true,
       }]

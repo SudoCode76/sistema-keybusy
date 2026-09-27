@@ -921,6 +921,25 @@ export async function setServiceInventoryTabVisibility(formData: FormData) {
   revalidatePath("/admin/subscriptions")
 }
 
+export async function setServiceDeliveryName(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const serviceId = requireValue(formData.get("id"), "Plataforma")
+  const deliveryName = requireValue(formData.get("delivery_name"), "Nombre de entrega")
+
+  await insertOrThrow(
+    supabase
+      .from("services")
+      .update({ delivery_name: deliveryName })
+      .eq("id", serviceId)
+      .select("id")
+      .single()
+  )
+
+  revalidatePath("/admin/settings")
+  revalidatePath("/admin/subscriptions")
+  revalidateAccountPages()
+}
+
 export async function setDefaultProduct(formData: FormData) {
   const { supabase } = await requireAdmin()
   const { error } = await supabase.rpc("set_default_product", {

@@ -45,11 +45,13 @@ import { CheckIcon, CopyIcon, MoreHorizontalIcon } from "lucide-react"
 import { useState } from "react"
 
 import { FormSubmitButton } from "./form-submit-button"
+import { CopyAccountDataItem } from "./copy-account-data-item"
 
 type ServiceOption = {
   id: string
   name: string
   slug: string
+  delivery_name?: string | null
   account_model: "private" | "mother"
   default_seat_capacity: number | null
 }
@@ -95,7 +97,7 @@ type InventoryAccount = {
   seat_capacity: number | null
   two_factor_url: string | null
   notes: string | null
-  services?: Nested<{ name: string | null; slug: string | null; account_model: "private" | "mother" }>
+  services?: Nested<{ name: string | null; slug: string | null; delivery_name?: string | null; account_model: "private" | "mother" }>
   providers?: Nested<{ name: string | null }>
   email_addresses?: Nested<{
     email: string
@@ -240,6 +242,13 @@ export function InventoryActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-40">
           <DropdownMenuGroup>
+            <CopyAccountDataItem
+              cutoffDate={account.renewal_due_on}
+              email={account.login_email ?? one(account.email_addresses)?.email ?? account.username}
+              password={platformPassword}
+              platform={one(account.services)?.delivery_name ?? one(account.services)?.name ?? "Servicio"}
+            />
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               disabled={!assignmentHref}
               render={assignmentHref ? <Link href={assignmentHref} /> : undefined}
