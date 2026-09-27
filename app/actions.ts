@@ -2462,6 +2462,7 @@ export async function renewSubscription(formData: FormData) {
       .from("subscriptions")
       .update({
         status: "active",
+        starts_on: periodStart,
         ends_on: periodEnd,
         duration_months: months,
         current_price_amount: amount,
