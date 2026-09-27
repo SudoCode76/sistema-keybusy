@@ -10,6 +10,7 @@ import {
 import { SpotifyMemberActions } from "@/app/admin/accounts/spotify-member-actions"
 import { CancelSaleAction } from "@/app/admin/accounts/cancel-sale-action"
 import { CopyAccountDataItem } from "@/app/admin/accounts/copy-account-data-item"
+import { ReplenishDaysDialog } from "@/app/admin/subscriptions/replenish-days-dialog"
 import { isAccountAvailable } from "@/app/admin/accounts/account-availability"
 import {
   accountMatchesSearch,
@@ -878,6 +879,18 @@ export function AccountsTable({
                                         password={client.loginPassword}
                                         platform={one(account.services)?.delivery_name ?? one(account.services)?.name ?? "Servicio"}
                                       />
+                                      {client.currentSubscriptionId ? (
+                                        <ReplenishDaysDialog
+                                          customerName={client.customerName}
+                                          endsOn={client.endsOn ?? ""}
+                                          subscriptionId={client.currentSubscriptionId}
+                                          onOpen={(openReplenishment) => (
+                                            <DropdownMenuItem onClick={openReplenishment}>
+                                              Reponer días
+                                            </DropdownMenuItem>
+                                          )}
+                                        />
+                                      ) : null}
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                   {client.currentSubscriptionId ? (

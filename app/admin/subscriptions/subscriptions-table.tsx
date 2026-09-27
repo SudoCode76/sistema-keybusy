@@ -52,6 +52,7 @@ export type SubscriptionRow = {
   endsOn: string
   renewalStartOn: string
   durationMonths: number
+  extraDays: number
   currentPriceAmount: number
   currentPriceCurrency: "BOB" | "USDT"
   currentExchangeRate: number | null
@@ -412,6 +413,7 @@ export function SubscriptionsTable({
                         startsOn: item.startsOn,
                         renewalStartOn: item.renewalStartOn,
                         durationMonths: item.durationMonths,
+                        extraDays: item.extraDays,
                         currentPriceAmount: item.currentPriceAmount,
                         currentPriceCurrency: item.currentPriceCurrency,
                         currentExchangeRate: item.currentExchangeRate,

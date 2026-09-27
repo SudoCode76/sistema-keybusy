@@ -26,6 +26,7 @@ import {
 import { formatDate } from "@/lib/date"
 import { FormSubmitButton } from "./form-submit-button"
 import { CopyAccountDataItem } from "./copy-account-data-item"
+import { ReplenishDaysDialog } from "@/app/admin/subscriptions/replenish-days-dialog"
 
 function CopyValue({ label, value }: { label: string; value: string | null }) {
   const [copied, setCopied] = useState(false)
@@ -221,6 +222,18 @@ export function SpotifyMemberActions({
               password={member.loginPassword}
               platform={platformName}
             />
+            {member.currentSubscriptionId && member.endsOn ? (
+              <ReplenishDaysDialog
+                customerName={member.customerName}
+                endsOn={member.endsOn}
+                subscriptionId={member.currentSubscriptionId}
+                onOpen={(openReplenishment) => (
+                  <DropdownMenuItem onClick={openReplenishment}>
+                    Reponer días
+                  </DropdownMenuItem>
+                )}
+              />
+            ) : null}
             <DropdownMenuItem onClick={() => setViewOpen(true)}>
               Ver cuenta
             </DropdownMenuItem>

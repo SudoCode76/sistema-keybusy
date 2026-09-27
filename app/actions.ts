@@ -2536,6 +2536,27 @@ export async function renewSubscription(formData: FormData) {
   revalidatePath("/portal")
 }
 
+export async function replenishSubscriptionDays(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const id = requireValue(formData.get("id"), "Venta")
+  const days = formNumber(formData.get("days"))
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    throw new Error("Ingresa una cantidad de días entre 1 y 365")
+  }
+
+  const { error } = await supabase.rpc("replenish_subscription_days", {
+    p_subscription_id: id,
+    p_days: days,
+  })
+  if (error) throw new Error(error.message)
+
+  revalidatePath("/admin")
+  revalidatePath("/admin/subscriptions")
+  revalidateAccountPages()
+  revalidatePath("/admin/payments")
+  revalidatePath("/portal")
+}
+
 export async function cancelSubscription(formData: FormData) {
   const { supabase } = await requireAdmin()
   const id = requireValue(formData.get("id"), "Venta")

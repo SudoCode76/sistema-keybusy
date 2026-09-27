@@ -67,6 +67,7 @@ import {
   type ProviderOption,
 } from "./sale-form"
 import { RenewSubscriptionForm } from "./renew-subscription-form"
+import { ReplenishDaysDialog } from "./replenish-days-dialog"
 
 type SubscriptionRow = {
   id: string
@@ -84,6 +85,7 @@ type SubscriptionRow = {
   startsOn: string
   renewalStartOn: string
   durationMonths: number
+  extraDays: number
   currentPriceAmount: number
   currentPriceCurrency: "BOB" | "USDT"
   currentExchangeRate: number | null
@@ -367,6 +369,21 @@ export function SubscriptionActions({
             <DropdownMenuItem onClick={() => setRenewOpen(true)}>
               Renovar
             </DropdownMenuItem>
+            {subscription.extraDays > 0 ? (
+              <DropdownMenuItem disabled>
+                Repuestos este período: {subscription.extraDays} días
+              </DropdownMenuItem>
+            ) : null}
+            <ReplenishDaysDialog
+              customerName={subscription.customerName}
+              endsOn={subscription.endsOn}
+              subscriptionId={subscription.id}
+              onOpen={(openReplenishment) => (
+                <DropdownMenuItem onClick={openReplenishment}>
+                  Reponer días
+                </DropdownMenuItem>
+              )}
+            />
             {subscription.motherAccessIssueOn ? (
               <form action={resolveMotherAccessIssue}>
                 <input name="id" type="hidden" value={subscription.id} />
@@ -847,6 +864,9 @@ export function SubscriptionActions({
             <DialogTitle>Registrar renovación</DialogTitle>
             <DialogDescription>
               Inicio sugerido: {formatDate(subscription.renewalStartOn)}
+              {subscription.extraDays > 0
+                ? ` · La reposición de ${subscription.extraDays} días no se descontará de esta renovación`
+                : ""}
             </DialogDescription>
           </DialogHeader>
           <RenewSubscriptionForm
