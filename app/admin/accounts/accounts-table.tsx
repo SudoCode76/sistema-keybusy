@@ -10,7 +10,12 @@ import {
 import { SpotifyMemberActions } from "@/app/admin/accounts/spotify-member-actions"
 import { CancelSaleAction } from "@/app/admin/accounts/cancel-sale-action"
 import { isAccountAvailable } from "@/app/admin/accounts/account-availability"
-import { accountMatchesSearch } from "@/app/admin/accounts/accounts-search"
+import {
+  accountMatchesSearch,
+  accountRecordMatchesSearch,
+  childMatchesSearch,
+  getSearchMatchSegments,
+} from "@/app/admin/accounts/accounts-search"
 import {
   ACCOUNT_COLUMN_OPTIONS,
   DEFAULT_ACCOUNT_COLUMNS,
@@ -175,7 +180,49 @@ function accountLabel(account: Account) {
   return [account.label, account.login_email ?? account.username].filter(Boolean).join(" · ")
 }
 
-function CopyCredential({ label, value }: { label: string; value: string | null | undefined }) {
+function HighlightMatch({
+  text,
+  query,
+  className,
+}: {
+  text: string | null | undefined
+  query: string | null | undefined
+  className?: string
+}) {
+  if (!text) return null
+  if (!query?.trim()) return <>{text}</>
+
+  const segments = getSearchMatchSegments(text, query)
+  const hasMatch = segments.some((segment) => segment.highlight)
+  if (!hasMatch) return <>{text}</>
+
+  return (
+    <span className={className}>
+      {segments.map((segment, index) =>
+        segment.highlight ? (
+          <mark
+            className="rounded-xs bg-amber-200/90 px-0.5 font-bold text-amber-950 dark:bg-amber-400/30 dark:text-amber-100"
+            key={index}
+          >
+            {segment.text}
+          </mark>
+        ) : (
+          <Fragment key={index}>{segment.text}</Fragment>
+        )
+      )}
+    </span>
+  )
+}
+
+function CopyCredential({
+  label,
+  value,
+  query,
+}: {
+  label: string
+  value: string | null | undefined
+  query?: string
+}) {
   const [copied, setCopied] = useState(false)
 
   if (!value) return null
@@ -195,7 +242,9 @@ function CopyCredential({ label, value }: { label: string; value: string | null 
       title={`Copiar ${label}`}
       type="button"
     >
-      <span className="truncate">{label}: {text}</span>
+      <span className="truncate">
+        {label}: <HighlightMatch query={query} text={text} />
+      </span>
       {copied ? <CheckIcon className="size-3 shrink-0" /> : <CopyIcon className="size-3 shrink-0" />}
     </button>
   )
@@ -519,14 +568,23 @@ export function AccountsTable({
                     (serviceSlug !== "spotify" || client.status !== "removed")
                 )
               : []
-            const isSearchExpanded = Boolean(query.trim()) && matchingAccountIds.has(account.id)
+            const hasActiveSearch = Boolean(query.trim())
+            const accountSelfMatches = hasActiveSearch && accountRecordMatchesSearch(account, query)
+            const matchingMemberCount = hasActiveSearch
+              ? membersForAccount.filter((client) => childMatchesSearch(client, query)).length
+              : 0
+            const isSearchExpanded = hasActiveSearch && matchingAccountIds.has(account.id)
             const isExpanded = expandedSpotifyAccounts.includes(account.id) || isSearchExpanded
 
             return (
               <Fragment key={account.id}>
               <motion.tr
                 animate={{ opacity: 1, y: 0 }}
-                className={responsiveAccountRowClassName}
+                className={cn(
+                  responsiveAccountRowClassName,
+                  accountSelfMatches &&
+                    "border-primary/50 bg-primary/5 ring-1 ring-primary/30 xl:bg-primary/5 dark:bg-primary/10 dark:xl:bg-primary/10"
+                )}
                 initial={{ opacity: 0, y: 6 }}
                 transition={{ delay: Math.min(accountIndex * 0.025, 0.18), duration: 0.22 }}
               >
@@ -534,28 +592,44 @@ export function AccountsTable({
                   <TableCell className={cn("col-span-2", responsiveAccountCellClassName)}>
                     <div className="flex flex-col items-start gap-1">
                       <div className="flex w-full flex-wrap items-center justify-between gap-2">
-                        <span className="font-semibold text-base xl:text-sm">{account.label}</span>
-                        {isMother ? (
-                          seatsAvailable === null ? (
-                            <Badge variant="outline">Cupos sin configurar</Badge>
-                          ) : (
-                            <Badge
-                              variant={
-                                seatsAvailable === 0
-                                  ? "destructive"
-                                  : "secondary"
-                              }
-                            >
-                              {seatsAvailable} de {seatsTotal} cupos disponibles
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-base xl:text-sm">
+                            <HighlightMatch query={query} text={account.label} />
+                          </span>
+                          {accountSelfMatches ? (
+                            <Badge className="h-4.5 px-1.5 py-0 text-[10px] font-semibold" variant="default">
+                              Coincidencia
                             </Badge>
-                          )
+                          ) : null}
+                        </div>
+                        {isMother ? (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {matchingMemberCount > 0 ? (
+                              <Badge className="border-primary/40 text-primary font-medium text-xs" variant="outline">
+                                {matchingMemberCount} {matchingMemberCount === 1 ? "coincidencia" : "coincidencias"}
+                              </Badge>
+                            ) : null}
+                            {seatsAvailable === null ? (
+                              <Badge variant="outline">Cupos sin configurar</Badge>
+                            ) : (
+                              <Badge
+                                variant={
+                                  seatsAvailable === 0
+                                    ? "destructive"
+                                    : "secondary"
+                                }
+                              >
+                                {seatsAvailable} de {seatsTotal} cupos disponibles
+                              </Badge>
+                            )}
+                          </div>
                         ) : null}
                       </div>
-                      <CopyCredential label="Correo" value={account.login_email ?? account.username} />
+                      <CopyCredential label="Correo" query={query} value={account.login_email ?? account.username} />
                       <CopyCredential label="Contraseña" value={platformPassword} />
                       {account.accountCustomerPhone ? (
                         <div className="mt-0.5 flex items-center gap-1 text-xs">
-                          <CopyCredential label="Cliente" value={account.accountCustomerPhone} />
+                          <CopyCredential label="Cliente" query={query} value={account.accountCustomerPhone} />
                         </div>
                       ) : (
                         <span className="mt-0.5 text-[11px] text-muted-foreground italic">
@@ -671,36 +745,61 @@ export function AccountsTable({
               <AnimatePresence initial={false}>
               {isMother && isExpanded
                 ? membersForAccount.length
-                  ? membersForAccount.map((client, memberIndex) => (
-                      <motion.tr
-                        animate={{ opacity: 1, y: 0 }}
-                        className={cn(responsiveMemberRowClassName, "xl:border-b last:xl:border-0")}
-                        exit={{ opacity: 0, y: -4 }}
-                        initial={{ opacity: 0, y: -4 }}
-                        key={client.id}
-                        transition={{ delay: memberIndex * 0.025, duration: 0.18 }}
-                      >
-                        {visibleColumns.has("account") ? (
-                          <TableCell className={cn("col-span-2", responsiveAccountCellClassName)}>
-                            <div className="border-l-2 border-primary/50 pl-3">
-                              <div className="flex flex-wrap items-center gap-1.5 font-semibold text-foreground">
-                                <span className="font-mono text-sm text-primary font-bold">
-                                  {client.customerName || client.contact}
-                                </span>
-                                {client.memberName ? (
-                                  <span className="text-xs font-normal text-muted-foreground">
-                                    ({client.memberName})
+                  ? membersForAccount.map((client, memberIndex) => {
+                      const clientMatches = hasActiveSearch && childMatchesSearch(client, query)
+                      const isDimmed = hasActiveSearch && !clientMatches
+
+                      return (
+                        <motion.tr
+                          animate={{ opacity: isDimmed ? 0.45 : 1, y: 0 }}
+                          className={cn(
+                            responsiveMemberRowClassName,
+                            "xl:border-b last:xl:border-0 transition-opacity",
+                            clientMatches
+                              ? "border-primary/70 bg-primary/10 ring-1 ring-primary/40 xl:bg-primary/10 dark:xl:bg-primary/15"
+                              : isDimmed
+                                ? "opacity-45 hover:opacity-100"
+                                : ""
+                          )}
+                          exit={{ opacity: 0, y: -4 }}
+                          initial={{ opacity: 0, y: -4 }}
+                          key={client.id}
+                          transition={{ delay: memberIndex * 0.025, duration: 0.18 }}
+                          whileHover={isDimmed ? { opacity: 1 } : undefined}
+                        >
+                          {visibleColumns.has("account") ? (
+                            <TableCell className={cn("col-span-2", responsiveAccountCellClassName)}>
+                              <div
+                                className={cn(
+                                  "pl-3 transition-colors",
+                                  clientMatches
+                                    ? "border-l-4 border-primary"
+                                    : "border-l-2 border-primary/50"
+                                )}
+                              >
+                                <div className="flex flex-wrap items-center gap-1.5 font-semibold text-foreground">
+                                  <span className="font-mono text-sm text-primary font-bold">
+                                    <HighlightMatch query={query} text={client.customerName || client.contact} />
                                   </span>
+                                  {client.memberName ? (
+                                    <span className="text-xs font-normal text-muted-foreground">
+                                      (<HighlightMatch query={query} text={client.memberName} />)
+                                    </span>
+                                  ) : null}
+                                  {clientMatches ? (
+                                    <Badge className="h-4.5 px-1.5 py-0 text-[10px] font-semibold" variant="default">
+                                      Coincidencia
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                {client.contact && client.contact !== client.customerName ? (
+                                  <div className="break-all text-xs text-muted-foreground">
+                                    <HighlightMatch query={query} text={client.contact} />
+                                  </div>
                                 ) : null}
                               </div>
-                              {client.contact && client.contact !== client.customerName ? (
-                                <div className="break-all text-xs text-muted-foreground">
-                                  {client.contact}
-                                </div>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                        ) : null}
+                            </TableCell>
+                          ) : null}
                         {visibleColumns.has("platform") ? (
                           <TableCell className={responsiveAccountCellClassName}>
                             <AccountMobileLabel>Plataforma</AccountMobileLabel>
@@ -772,8 +871,9 @@ export function AccountsTable({
                             </div>
                           </TableCell>
                         ) : null}
-                      </motion.tr>
-                    ))
+                        </motion.tr>
+                      )
+                    })
                   : (
                     <motion.tr
                       animate={{ opacity: 1 }}
