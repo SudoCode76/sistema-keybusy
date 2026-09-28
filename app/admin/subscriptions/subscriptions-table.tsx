@@ -42,6 +42,7 @@ export type SubscriptionRow = {
   productId: string
   productName: string
   serviceName: string
+  serviceDeliveryName: string
   serviceSlug: string
   serviceAccountId: string | null
   motherAccessIssueOn: string | null
@@ -399,6 +400,8 @@ export function SubscriptionsTable({
                       binanceRate={binanceRate}
                       subscription={{
                         id: item.id,
+                        serviceName: item.serviceName,
+                        serviceDeliveryName: item.serviceDeliveryName,
                         customerId: item.customerId,
                         customerCountryId: item.customerCountryId,
                         customerName: item.customerName,
@@ -428,7 +431,6 @@ export function SubscriptionsTable({
                         accountLabel: item.accountLabel,
                         notes: item.notes,
                         productName: item.productName,
-                        serviceName: item.serviceName,
                         status: item.status,
                         detail: item.detail,
                         account: item.account,

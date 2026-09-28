@@ -69,7 +69,7 @@ export async function getSubscriptionsPage(
   let productIds: string[] | null = null
   let subscriptionQuery = supabase
     .from("subscriptions")
-    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, renewal_message_sent_at, access_restored_on, created_at, notes, customers(id, country_id, display_name, phone, phone_e164, phone_normalized, telegram_username), products(id, slug, name, services(slug, name, account_model)), service_accounts(label, login_email, username, provider_id, email_address_id, base_cost_amount, base_cost_currency, renewal_due_on, access_issue_on, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields), billing_cycles(period_end, extra_days)", { count: "exact" })
+    .select("id, product_id, service_account_id, slot_label, status, starts_on, ends_on, duration_months, current_price_amount, current_price_currency, current_exchange_rate, renewal_message_sent_at, access_restored_on, created_at, notes, customers(id, country_id, display_name, phone, phone_e164, phone_normalized, telegram_username), products(id, slug, name, services(slug, name, delivery_name, account_model)), service_accounts(label, login_email, username, provider_id, email_address_id, base_cost_amount, base_cost_currency, renewal_due_on, access_issue_on, two_factor_url, spotify_family_plans(invite_url, address)), subscription_access_details(login_email, login_password, email_password, invitation_email, profile_label, notes, visible_to_customer, visible_fields), billing_cycles(period_end, extra_days)", { count: "exact" })
 
   subscriptionQuery = showCanceled
     ? subscriptionQuery.in("status", ["canceled", "inactive"])
@@ -278,6 +278,7 @@ export async function getSubscriptionsPage(
       productId: subscription.product_id,
       productName: product?.name ?? "Item",
       serviceName: service?.name ?? "Servicio",
+      serviceDeliveryName: service?.delivery_name ?? service?.name ?? "Servicio",
       serviceSlug: service?.slug ?? "",
       serviceAccountId: subscription.service_account_id,
       motherAccessIssueOn: motherIssueOn,

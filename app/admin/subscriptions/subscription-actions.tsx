@@ -58,6 +58,7 @@ import { money } from "@/lib/money"
 import { telegramUrl, whatsappUrl } from "@/lib/phone"
 
 import { FormSubmitButton } from "../accounts/form-submit-button"
+import { CopyAccountDataItem } from "../accounts/copy-account-data-item"
 import { canOfferAccountReuse } from "../accounts/account-availability"
 import {
   EditSaleForm,
@@ -115,6 +116,7 @@ type SubscriptionRow = {
   notes: string | null
   productName: string
   serviceName: string
+  serviceDeliveryName: string
   status: string
   endsOn: string
   account: {
@@ -363,6 +365,12 @@ export function SubscriptionActions({
             <DropdownMenuItem onClick={() => setViewOpen(true)}>
               Ver cuenta
             </DropdownMenuItem>
+            <CopyAccountDataItem
+              cutoffDate={subscription.endsOn}
+              email={customerEmail ?? inventoryEmail ?? subscription.detail?.invitation_email}
+              password={customerPassword ?? platformPassword}
+              platform={subscription.serviceDeliveryName}
+            />
             <DropdownMenuItem onClick={() => setOpen(true)}>
               Editar
             </DropdownMenuItem>
