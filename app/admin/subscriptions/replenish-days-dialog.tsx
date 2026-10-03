@@ -22,15 +22,16 @@ export function ReplenishDaysDialog({
   subscriptionId,
   customerName,
   endsOn,
-  onOpen,
+  open,
+  onOpenChange,
 }: {
   subscriptionId: string
   customerName: string
   endsOn: string
-  onOpen?: (open: () => void) => React.ReactNode
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
   const [days, setDays] = useState("5")
   const [error, setError] = useState("")
   const nextDate = new Date(`${endsOn}T00:00:00Z`)
@@ -41,7 +42,7 @@ export function ReplenishDaysDialog({
     setError("")
     try {
       await replenishSubscriptionDays(formData)
-      setOpen(false)
+      onOpenChange(false)
       router.refresh()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "No se pudieron reponer los días")
@@ -49,13 +50,7 @@ export function ReplenishDaysDialog({
   }
 
   return (
-    <>
-      {onOpen ? onOpen(() => setOpen(true)) : (
-        <Button onClick={() => setOpen(true)} type="button" variant="ghost">
-          Reponer días
-        </Button>
-      )}
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reponer días</DialogTitle>
@@ -85,13 +80,12 @@ export function ReplenishDaysDialog({
               </p>
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
               <div className="flex justify-end gap-2">
-                <Button onClick={() => setOpen(false)} type="button" variant="outline">Cancelar</Button>
+                <Button onClick={() => onOpenChange(false)} type="button" variant="outline">Cancelar</Button>
                 <FormSubmitButton pendingLabel="Reponiendo...">Confirmar</FormSubmitButton>
               </div>
             </FieldGroup>
           </form>
         </DialogContent>
       </Dialog>
-    </>
   )
 }

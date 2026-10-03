@@ -113,6 +113,7 @@ export function SpotifyMemberActions({
   const [moveOpen, setMoveOpen] = useState(false)
   const [promoteOpen, setPromoteOpen] = useState(false)
   const [pendingAssignOpen, setPendingAssignOpen] = useState(false)
+  const [replenishOpen, setReplenishOpen] = useState(false)
   const [targetAccountId, setTargetAccountId] = useState("")
   const [pendingTargetAccountId, setPendingTargetAccountId] = useState("")
   const [editState, editAction] = useActionState(
@@ -223,16 +224,9 @@ export function SpotifyMemberActions({
               platform={platformName}
             />
             {member.currentSubscriptionId && member.endsOn ? (
-              <ReplenishDaysDialog
-                customerName={member.customerName}
-                endsOn={member.endsOn}
-                subscriptionId={member.currentSubscriptionId}
-                onOpen={(openReplenishment) => (
-                  <DropdownMenuItem onClick={openReplenishment}>
-                    Reponer días
-                  </DropdownMenuItem>
-                )}
-              />
+              <DropdownMenuItem onClick={() => setReplenishOpen(true)}>
+                Reponer días
+              </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem onClick={() => setViewOpen(true)}>
               Ver cuenta
@@ -315,6 +309,16 @@ export function SpotifyMemberActions({
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {member.currentSubscriptionId && member.endsOn ? (
+        <ReplenishDaysDialog
+          customerName={member.customerName}
+          endsOn={member.endsOn}
+          onOpenChange={setReplenishOpen}
+          open={replenishOpen}
+          subscriptionId={member.currentSubscriptionId}
+        />
+      ) : null}
 
       <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">

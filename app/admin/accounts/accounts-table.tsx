@@ -293,6 +293,11 @@ export function AccountsTable({
   providers: ProviderOption[]
   returnPath: "/admin/accounts" | "/admin/personal-accounts"
 }) {
+  const [replenishment, setReplenishment] = useState<{
+    subscriptionId: string
+    customerName: string
+    endsOn: string
+  } | null>(null)
   const [platformFilter, setPlatformFilter] = useState("all")
   const [query, setQuery] = useState("")
   const [expandedSpotifyAccounts, setExpandedSpotifyAccounts] = useState<string[]>([])
@@ -880,16 +885,13 @@ export function AccountsTable({
                                         platform={one(account.services)?.delivery_name ?? one(account.services)?.name ?? "Servicio"}
                                       />
                                       {client.currentSubscriptionId ? (
-                                        <ReplenishDaysDialog
-                                          customerName={client.customerName}
-                                          endsOn={client.endsOn ?? ""}
-                                          subscriptionId={client.currentSubscriptionId}
-                                          onOpen={(openReplenishment) => (
-                                            <DropdownMenuItem onClick={openReplenishment}>
-                                              Reponer días
-                                            </DropdownMenuItem>
-                                          )}
-                                        />
+                                        <DropdownMenuItem onClick={() => setReplenishment({
+                                          subscriptionId: client.currentSubscriptionId!,
+                                          customerName: client.customerName,
+                                          endsOn: client.endsOn ?? "",
+                                        })}>
+                                          Reponer días
+                                        </DropdownMenuItem>
                                       ) : null}
                                     </DropdownMenuContent>
                                   </DropdownMenu>
@@ -928,6 +930,15 @@ export function AccountsTable({
           })}
         </TableBody>
       </Table>
+      {replenishment ? (
+        <ReplenishDaysDialog
+          customerName={replenishment.customerName}
+          endsOn={replenishment.endsOn}
+          onOpenChange={(open) => { if (!open) setReplenishment(null) }}
+          open
+          subscriptionId={replenishment.subscriptionId}
+        />
+      ) : null}
       {filteredAccounts.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground">
           {query.trim()

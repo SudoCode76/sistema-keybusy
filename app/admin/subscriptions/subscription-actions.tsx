@@ -212,6 +212,7 @@ export function SubscriptionActions({
   const [viewOpen, setViewOpen] = useState(false)
   const [open, setOpen] = useState(false)
   const [renewOpen, setRenewOpen] = useState(false)
+  const [replenishOpen, setReplenishOpen] = useState(false)
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [costOpen, setCostOpen] = useState(false)
   const [blockOpen, setBlockOpen] = useState(false)
@@ -382,16 +383,9 @@ export function SubscriptionActions({
                 Repuestos este período: {subscription.extraDays} días
               </DropdownMenuItem>
             ) : null}
-            <ReplenishDaysDialog
-              customerName={subscription.customerName}
-              endsOn={subscription.endsOn}
-              subscriptionId={subscription.id}
-              onOpen={(openReplenishment) => (
-                <DropdownMenuItem onClick={openReplenishment}>
-                  Reponer días
-                </DropdownMenuItem>
-              )}
-            />
+            <DropdownMenuItem onClick={() => setReplenishOpen(true)}>
+              Reponer días
+            </DropdownMenuItem>
             {subscription.motherAccessIssueOn ? (
               <form action={resolveMotherAccessIssue}>
                 <input name="id" type="hidden" value={subscription.id} />
@@ -577,6 +571,14 @@ export function SubscriptionActions({
           </form>
         </DialogContent>
       </Dialog>
+
+      <ReplenishDaysDialog
+        customerName={subscription.customerName}
+        endsOn={subscription.endsOn}
+        onOpenChange={setReplenishOpen}
+        open={replenishOpen}
+        subscriptionId={subscription.id}
+      />
 
       <Dialog open={blockOpen} onOpenChange={setBlockOpen}>
         <DialogContent>
