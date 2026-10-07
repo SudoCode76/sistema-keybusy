@@ -88,12 +88,16 @@ export type SubscriptionRow = {
     base_cost_amount: number
     base_cost_currency: "BOB" | "USDT"
     two_factor_url: string | null
-    account_credentials?: { secret_payload: string | null } | null
+    account_credentials?: {
+      secret_payload: string | null
+      platform_password_changed_at: string | null
+    } | null
     spotify_family_plans?: { invite_url: string | null; address: string | null } | null
   } | null
   detail: {
     login_email: string | null
     login_password: string | null
+    login_password_changed_at: string | null
     email_password: string | null
     invitation_email: string | null
     profile_label: string | null

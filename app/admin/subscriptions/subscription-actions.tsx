@@ -53,7 +53,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { formatDate } from "@/lib/date"
+import { formatBoliviaDateTime, formatDate } from "@/lib/date"
 import { money } from "@/lib/money"
 import { telegramUrl, whatsappUrl } from "@/lib/phone"
 
@@ -127,7 +127,10 @@ type SubscriptionRow = {
     base_cost_amount: number
     base_cost_currency: "BOB" | "USDT"
     two_factor_url: string | null
-    account_credentials?: { secret_payload: string | null } | null
+    account_credentials?: {
+      secret_payload: string | null
+      platform_password_changed_at: string | null
+    } | null
     spotify_family_plans?: {
       invite_url: string | null
       address: string | null
@@ -136,6 +139,7 @@ type SubscriptionRow = {
   detail: {
     login_email: string | null
     login_password: string | null
+    login_password_changed_at: string | null
     email_password: string | null
     invitation_email: string | null
     profile_label: string | null
@@ -162,9 +166,11 @@ function parseSecretPayload(payload: string | null | undefined) {
 function CopyLine({
   label,
   value,
+  changedAt,
 }: {
   label: string
   value: string | null | undefined
+  changedAt?: string | null
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -183,6 +189,11 @@ function CopyLine({
       <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="break-all text-sm">{value}</p>
+        {changedAt !== undefined ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Último cambio: {changedAt ? formatBoliviaDateTime(changedAt) : "Sin registro"}
+          </p>
+        ) : null}
       </div>
       <Button type="button" variant="ghost" size="icon-sm" onClick={copy}>
         {copied ? <CheckIcon /> : <CopyIcon />}
@@ -655,7 +666,11 @@ export function SubscriptionActions({
                 Cuenta del cliente
               </h3>
               <CopyLine label="Correo o usuario de acceso" value={customerEmail} />
-              <CopyLine label={platformPasswordLabel} value={customerPassword} />
+              <CopyLine
+                changedAt={subscription.serviceSlug === "spotify" ? subscription.detail?.login_password_changed_at : undefined}
+                label={platformPasswordLabel}
+                value={customerPassword}
+              />
               <CopyLine label="Contraseña del correo" value={customerEmailPassword} />
               {subscription.serviceSlug === "spotify" ? null : (
                 <CopyLine label="Correo invitado" value={subscription.detail?.invitation_email} />
@@ -670,7 +685,11 @@ export function SubscriptionActions({
                   {subscription.serviceSlug === "spotify" ? "Cuenta madre Spotify" : "Cuenta de inventario"}
                 </h3>
                 <CopyLine label="Correo o usuario de acceso" value={inventoryEmail} />
-                <CopyLine label={platformPasswordLabel} value={platformPassword} />
+                <CopyLine
+                  changedAt={subscription.serviceSlug === "spotify" ? subscription.account?.account_credentials?.platform_password_changed_at : undefined}
+                  label={platformPasswordLabel}
+                  value={platformPassword}
+                />
                 <CopyLine label="Contraseña del correo" value={inventoryEmailPassword} />
                 {extraPasswords.map(([key, value]) => (
                   <CopyLine key={key} label={key} value={value} />

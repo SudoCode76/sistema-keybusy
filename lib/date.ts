@@ -28,6 +28,29 @@ export function formatDateTime(value: string | null | undefined) {
   return date ? `${date.day}/${date.month}/${date.year}${date.time ? ` ${date.time}` : ""}` : "-"
 }
 
+export function formatBoliviaDateTime(value: string | null | undefined) {
+  if (!value) return "-"
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "-"
+
+  const values = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+      minute: "2-digit",
+      month: "2-digit",
+      timeZone: "America/La_Paz",
+      year: "numeric",
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value])
+  )
+
+  return `${values.day}/${values.month}/${values.year} ${values.hour}:${values.minute}`
+}
+
 export function boliviaDate(value: string) {
   const values = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
