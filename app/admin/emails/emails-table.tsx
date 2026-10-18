@@ -78,7 +78,7 @@ export function EmailsTable({
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [filter, page, query, refreshToken])
+  }, [filter, initialRows, page, query, refreshToken])
 
   return (
     <div className="flex flex-col gap-4">

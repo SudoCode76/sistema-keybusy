@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react"
 import { CopyIcon, MoreHorizontalIcon } from "lucide-react"
+import { unstable_rethrow } from "next/navigation"
 
 import { assignPendingSpotifyMember, cancelSubscription, moveSpotifyMember, promoteSpotifyMemberToMother, removeOrphanedSpotifyMember, removeSpotifyMember, updateSpotifyMember, updateSpotifyMemberName } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -125,6 +126,21 @@ export function SpotifyMemberActions({
       } catch (error) {
         return {
           error: error instanceof Error ? error.message : "No se pudo actualizar el miembro",
+        }
+      }
+    },
+    {}
+  )
+  const [nameState, nameAction] = useActionState(
+    async (_previousState: { error?: string }, formData: FormData) => {
+      try {
+        await updateSpotifyMemberName(formData)
+        setNameOpen(false)
+        return {}
+      } catch (error) {
+        unstable_rethrow(error)
+        return {
+          error: error instanceof Error ? error.message : "No se pudo guardar el nombre",
         }
       }
     },
@@ -694,7 +710,7 @@ export function SpotifyMemberActions({
             <DialogTitle>Asignar nombre</DialogTitle>
             <DialogDescription>El nombre se mostrará en la cuenta del miembro.</DialogDescription>
           </DialogHeader>
-          <form action={updateSpotifyMemberName} onSubmit={() => setNameOpen(false)}>
+          <form action={nameAction}>
             <FieldGroup>
               <input name="member_id" type="hidden" value={member.id} />
               <Field>
@@ -706,6 +722,12 @@ export function SpotifyMemberActions({
                   placeholder="Ej. Familia principal"
                 />
               </Field>
+              {nameState.error ? (
+                <Alert variant="destructive">
+                  <AlertTitle>No se pudo actualizar</AlertTitle>
+                  <AlertDescription>{nameState.error}</AlertDescription>
+                </Alert>
+              ) : null}
               <FormSubmitButton pendingLabel="Guardando...">Guardar</FormSubmitButton>
             </FieldGroup>
           </form>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect, useState } from "react"
+import { useActionState, useState } from "react"
 import { useRouter } from "next/navigation"
 import { CheckIcon, CopyIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react"
 
@@ -54,14 +54,14 @@ function EmailForm({
   onSaved: () => void
 }) {
   const action = email ? updateManagedEmail : createManagedEmail
-  const [state, formAction] = useActionState<EmailState, FormData>(action, {})
+  const [state, formAction] = useActionState<EmailState, FormData>(async (previousState, formData) => {
+    const result = await action(previousState, formData)
+    if (result.message) onSaved()
+    return result
+  }, {})
   const [origin, setOrigin] = useState<"self" | "provider">(email?.origin ?? "self")
   const [providerId, setProviderId] = useState(email?.providerId ?? "none")
   const [status, setStatus] = useState<"active" | "inactive">(email?.status ?? "active")
-
-  useEffect(() => {
-    if (state.message) onSaved()
-  }, [onSaved, state.message])
 
   return (
     <form action={formAction}>

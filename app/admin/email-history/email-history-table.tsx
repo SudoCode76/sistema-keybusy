@@ -63,7 +63,11 @@ export function EmailHistoryTable({
 }: {
   initialEntries: EmailHistoryEntry[]
 }) {
-  const [entries, setEntries] = useState(initialEntries)
+  const [deletedIds, setDeletedIds] = useState<string[]>([])
+  const entries = useMemo(
+    () => initialEntries.filter((entry) => !deletedIds.includes(entry.id)),
+    [initialEntries, deletedIds]
+  )
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<"all" | "free" | "mixed">("all")
   const [selectedEntry, setSelectedEntry] = useState<EmailHistoryEntry | null>(null)
@@ -112,7 +116,7 @@ export function EmailHistoryTable({
   }
 
   const handleDeleted = (deletedId: string) => {
-    setEntries((prev) => prev.filter((item) => item.id !== deletedId))
+    setDeletedIds((prev) => [...prev, deletedId])
   }
 
   return (

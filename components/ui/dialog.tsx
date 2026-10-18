@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
+import { unstable_rethrow } from "next/navigation"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -168,15 +169,25 @@ function DialogForm({
   action: (formData: FormData) => Promise<void>
 }) {
   const actionsRef = React.useContext(DialogActionsContext)
+  const [error, setError] = React.useState("")
 
   return (
     <form
       action={async (formData) => {
-        await action(formData)
-        actionsRef?.current?.close()
+        setError("")
+        try {
+          await action(formData)
+          actionsRef?.current?.close()
+        } catch (caught) {
+          unstable_rethrow(caught)
+          setError(caught instanceof Error ? caught.message : "No se pudieron guardar los cambios")
+        }
       }}
       {...props}
-    />
+    >
+      {props.children}
+      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+    </form>
   )
 }
 

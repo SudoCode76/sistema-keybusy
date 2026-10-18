@@ -163,7 +163,6 @@ export function SubscriptionsTable({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const firstLoad = useRef(true)
-  const initialVersion = initialRows.map((row) => `${row.id}:${row.status}:${row.endsOn}:${row.renewalMessageSentAt ?? ""}`).join("|")
   const totalPages = Math.max(1, Math.ceil(total / 20))
 
   useEffect(() => {
@@ -211,7 +210,7 @@ export function SubscriptionsTable({
       clearTimeout(timeout)
       controller.abort()
     }
-  }, [initialVersion, onlyReminded, page, platform, query, showCanceled])
+  }, [initialRows, onlyReminded, page, platform, query, showCanceled])
 
   return (
     <div className="min-w-0 flex flex-col gap-4">

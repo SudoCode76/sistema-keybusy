@@ -29,7 +29,6 @@ export default async function EmailsPage() {
       </CardHeader>
       <CardContent>
         <EmailsTable
-          key={initialPage.rows.map((row) => `${row.id}:${row.status}:${row.activeUsageCount}`).join("|")}
           initialRows={initialPage.rows}
           initialTotal={initialPage.total}
           providers={providers ?? []}

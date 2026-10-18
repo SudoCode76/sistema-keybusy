@@ -349,7 +349,11 @@ function SaleFormBody({
         (access) => access.subscriptionId === defaultReusableAccessId
       )
     : undefined
-  const [state, action, pending] = useActionState(submitAction, {})
+  const [state, action, pending] = useActionState(async (previousState: SaleState, formData: FormData) => {
+    const result = await submitAction(previousState, formData)
+    if (result.message) onSaved?.()
+    return result
+  }, {})
   const [productSlug, setProductSlug] = useState(initialProduct?.slug ?? "")
   const [countryId, setCountryId] = useState(
     initialValues?.countryId ?? defaultCountryId ?? countries[0]?.id ?? ""
@@ -576,12 +580,6 @@ function SaleFormBody({
     accountMode === "new"
       ? (currentDuplicateCheck?.privateAccount ?? null)
       : null
-
-  useEffect(() => {
-    if (state.message) {
-      onSaved?.()
-    }
-  }, [onSaved, state.message])
 
   const handleProviderSaved = useCallback(
     (provider: ProviderOption) => {
