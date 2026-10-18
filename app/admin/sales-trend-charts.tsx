@@ -1,6 +1,6 @@
 "use client"
 
-import dynamic from "next/dynamic"
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts"
 
 import {
   Card,
@@ -9,17 +9,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart"
 
 import { buildSalesTrendData, type SalesTrendRow } from "./sales-trends"
-import type { ThreeSeries } from "./sales-trend-3d"
-
-const SalesTrend3D = dynamic(
-  () => import("./sales-trend-3d").then((module) => module.SalesTrend3D),
-  {
-    loading: () => <div className="h-[300px] animate-pulse rounded-xl bg-muted/40" />,
-    ssr: false,
-  }
-)
 
 const SERVICE_COLORS = [
   "#38bdf8",
@@ -30,31 +26,86 @@ const SERVICE_COLORS = [
   "#22d3ee",
 ]
 
-const acquisitionSeries: ThreeSeries[] = [
-  { key: "newSales", label: "Clientes nuevos", color: "#38bdf8" },
-  { key: "renewalSales", label: "Renovaciones", color: "#f59e0b" },
-]
+type Slice = {
+  key: string
+  label: string
+  value: number
+  color: string
+}
 
-function Legend({ series }: { series: ThreeSeries[] }) {
+function SalesPie({ label, slices }: { label: string; slices: Slice[] }) {
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0)
+
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-      {series.map((item) => (
-        <span className="flex items-center gap-2" key={item.key}>
-          <span className="size-2.5 rounded-full shadow-[0_0_10px_currentColor]" style={{ color: item.color, backgroundColor: item.color }} />
-          {item.label}
-        </span>
-      ))}
-    </div>
+    <>
+      <ChartContainer
+        aria-label={label}
+        className="h-[280px] w-full rounded-xl border border-border/60 bg-muted/20"
+        config={{}}
+        role="img"
+      >
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+          initialDimension={{ width: 240, height: 280 }}
+        >
+          <PieChart>
+            <Pie
+              data={slices}
+              dataKey="value"
+              nameKey="label"
+              outerRadius="82%"
+              stroke="var(--card)"
+              strokeWidth={2}
+            >
+              {slices.map((slice) => (
+                <Cell fill={slice.color} key={slice.key} />
+              ))}
+            </Pie>
+            <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+          </PieChart>
+        </ResponsiveContainer>
+      </ChartContainer>
+      <ul className="grid gap-2 text-sm">
+        {slices.map((slice) => (
+          <li className="flex items-center gap-3" key={slice.key}>
+            <span
+              aria-hidden="true"
+              className="size-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: slice.color }}
+            />
+            <span className="min-w-0 flex-1">{slice.label}</span>
+            <span className="shrink-0 text-muted-foreground tabular-nums">
+              {slice.value.toLocaleString("es-BO")} ·{" "}
+              {((slice.value / total) * 100).toLocaleString("es-BO", {
+                maximumFractionDigits: 1,
+              })}{" "}
+              %
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
 
 export function SalesTrendCharts({ rows }: { rows: SalesTrendRow[] }) {
-  const { services, points } = buildSalesTrendData(rows)
-  const serviceSeries = services.map((service, index) => ({
-    key: service.key,
+  const { services, newSales, renewalSales } = buildSalesTrendData(rows)
+  const serviceSlices = services.map((service, index) => ({
+    key: service.slug,
     label: service.name,
+    value: service.total,
     color: SERVICE_COLORS[index % SERVICE_COLORS.length],
   }))
+  const acquisitionSlices = [
+    { key: "new", label: "Ventas nuevas", value: newSales, color: "#38bdf8" },
+    {
+      key: "renewal",
+      label: "Renovaciones",
+      value: renewalSales,
+      color: "#f59e0b",
+    },
+  ]
 
   if (!services.length) {
     return (
@@ -71,21 +122,29 @@ export function SalesTrendCharts({ rows }: { rows: SalesTrendRow[] }) {
       <Card className="overflow-hidden border-white/8 bg-card/90">
         <CardHeader>
           <CardTitle>Ventas por servicio</CardTitle>
-          <CardDescription>Mapa 3D diario según el inicio del período.</CardDescription>
+          <CardDescription>
+            Distribución acumulada del mes según el inicio del período.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <SalesTrend3D ariaLabel="Ventas diarias por servicio" points={points} series={serviceSeries} />
-          <Legend series={serviceSeries} />
+          <SalesPie
+            label="Distribución de ventas por servicio este mes"
+            slices={serviceSlices}
+          />
         </CardContent>
       </Card>
       <Card className="overflow-hidden border-white/8 bg-card/90">
         <CardHeader>
           <CardTitle>Nuevos y renovaciones</CardTitle>
-          <CardDescription>Comparación 3D diaria de ambos tipos de venta.</CardDescription>
+          <CardDescription>
+            Distribución acumulada del mes según el inicio del período.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <SalesTrend3D ariaLabel="Clientes nuevos y renovaciones por día" points={points} series={acquisitionSeries} />
-          <Legend series={acquisitionSeries} />
+          <SalesPie
+            label="Distribución de ventas nuevas y renovaciones este mes"
+            slices={acquisitionSlices}
+          />
         </CardContent>
       </Card>
     </div>

@@ -3,7 +3,7 @@ import test from "node:test"
 
 import { buildSalesTrendData } from "./sales-trends.ts"
 
-test("agrupa ventas diarias y omite servicios sin ventas", () => {
+test("acumula el mes por servicio y tipo de venta, omitiendo servicios sin ventas", () => {
   const result = buildSalesTrendData([
     {
       day: "2026-07-01",
@@ -22,6 +22,14 @@ test("agrupa ventas diarias y omite servicios sin ventas", () => {
       total_sales: 0,
     },
     {
+      day: "2026-07-01",
+      service_slug: "canva",
+      service_name: "Canva",
+      new_sales: "1",
+      renewal_sales: null,
+      total_sales: "1",
+    },
+    {
       day: "2026-07-02",
       service_slug: "spotify",
       service_name: "Spotify",
@@ -31,22 +39,20 @@ test("agrupa ventas diarias y omite servicios sin ventas", () => {
     },
   ])
 
-  assert.deepEqual(
-    result.services.map(({ slug }) => slug),
-    ["spotify"]
-  )
-  assert.deepEqual(result.points, [
-    {
-      day: "2026-07-01",
-      newSales: 2,
-      renewalSales: 1,
-      service_0: 3,
-    },
-    {
-      day: "2026-07-02",
-      newSales: 0,
-      renewalSales: 1,
-      service_0: 1,
-    },
-  ])
+  assert.deepEqual(result, {
+    services: [
+      { slug: "spotify", name: "Spotify", total: 4 },
+      { slug: "canva", name: "Canva", total: 1 },
+    ],
+    newSales: 3,
+    renewalSales: 2,
+  })
+})
+
+test("sin ventas no hay porciones", () => {
+  assert.deepEqual(buildSalesTrendData([]), {
+    services: [],
+    newSales: 0,
+    renewalSales: 0,
+  })
 })
