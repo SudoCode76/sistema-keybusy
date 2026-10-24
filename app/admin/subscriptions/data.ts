@@ -186,7 +186,7 @@ export async function getSubscriptionsPage(
     { data: credentials },
     { data: purchaseCosts },
     { data: emailUsages },
-    { data: accountHistory },
+    { data: accountHistory, error: historyError },
   ] = await Promise.all([
     accountIds.length
       ? supabase
@@ -211,11 +211,12 @@ export async function getSubscriptionsPage(
     subscriptionIds.length
       ? supabase
           .from("subscription_account_history")
-          .select("subscription_id, service_account_id, assigned_at, ended_at, blocked_at, block_reason, purchase_cost_bob, purchase_cost_usdt, service_accounts(label, created_at)")
+          .select("id, subscription_id, service_account_id, assigned_at, ended_at, is_estimated, blocked_at, block_reason, purchase_cost_bob, purchase_cost_usdt, service_accounts(label, login_email, username)")
           .in("subscription_id", subscriptionIds)
           .order("assigned_at")
-      : Promise.resolve({ data: [] }),
+      : Promise.resolve({ data: [], error: null }),
   ])
+  if (historyError) throw historyError
   const credentialsByAccountId = new Map(
     (credentials ?? []).map((item) => [item.service_account_id, item])
   )
@@ -231,10 +232,6 @@ export async function getSubscriptionsPage(
   const normalizedHistory = (accountHistory ?? []).map((history) => ({
     ...history,
     service_accounts: one(history.service_accounts),
-    duration_days: calendarDaysBetween(
-      one(history.service_accounts)?.created_at ?? history.assigned_at,
-      history.ended_at ?? today
-    ),
   })) as Array<SubscriptionRow["accountHistory"][number] & { subscription_id: string }>
   const historyBySubscription = new Map<string, SubscriptionRow["accountHistory"]>()
   for (const history of normalizedHistory) {

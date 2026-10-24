@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { PlusIcon } from "lucide-react"
 
 import { createCustomer } from "@/app/actions"
@@ -31,9 +32,15 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { requireAdmin } from "@/lib/auth"
+import { matchesCustomerContact } from "./search"
 
-export default async function CustomersPage() {
+export default async function CustomersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
   const { supabase } = await requireAdmin()
+  const query = (await searchParams).q ?? ""
   const [{ data }, { data: countries }] = await Promise.all([
     supabase
       .from("customers")
@@ -46,6 +53,7 @@ export default async function CustomersPage() {
       .order("name"),
   ])
   const defaultCountryId = countries?.find((country) => country.iso2 === "BO")?.id
+  const customers = (data ?? []).filter((customer) => matchesCustomerContact(customer, query))
 
   return (
     <Card>
@@ -104,6 +112,10 @@ export default async function CustomersPage() {
         </Dialog>
       </CardHeader>
       <CardContent>
+        <form className="mb-4 flex max-w-md gap-2" method="get">
+          <Input aria-label="Buscar por teléfono o Telegram" defaultValue={query} name="q" placeholder="Buscar por teléfono o Telegram" />
+          <Button type="submit" variant="outline">Buscar</Button>
+        </form>
         <Table>
           <TableHeader>
             <TableRow>
@@ -112,10 +124,11 @@ export default async function CustomersPage() {
               <TableHead>Teléfono</TableHead>
               <TableHead>Telegram</TableHead>
               <TableHead>Estado</TableHead>
+              <TableHead>Historial</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(data ?? []).map((customer) => (
+            {customers.map((customer) => (
               <TableRow key={customer.id}>
                 <TableCell>{customer.display_name}</TableCell>
                 <TableCell>{customer.email}</TableCell>
@@ -126,6 +139,11 @@ export default async function CustomersPage() {
                     : null}
                 </TableCell>
                 <TableCell>{customer.status}</TableCell>
+                <TableCell>
+                  <Link className="text-sm font-medium text-primary hover:underline" href={`/admin/customers/${customer.id}/history`}>
+                    Ver historial
+                  </Link>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

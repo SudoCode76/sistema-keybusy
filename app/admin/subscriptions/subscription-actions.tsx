@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useActionState, useState } from "react"
 import {
   BellIcon,
@@ -54,6 +55,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { formatBoliviaDateTime, formatDate } from "@/lib/date"
+import { AccountHistoryList, type AccountHistoryEntry } from "./account-history-list"
 import { money } from "@/lib/money"
 import { telegramUrl, whatsappUrl } from "@/lib/phone"
 
@@ -93,17 +95,7 @@ type SubscriptionRow = {
   renewalMessageSentAt: string | null
   renewalMessageDays: number | null
   hasPurchaseCost: boolean
-  accountHistory: Array<{
-    service_account_id: string
-    assigned_at: string
-    ended_at: string | null
-    blocked_at: string | null
-    block_reason: string | null
-    purchase_cost_bob: number
-    purchase_cost_usdt: number
-    duration_days: number
-    service_accounts: { label: string; created_at: string } | null
-  }>
+  accountHistory: AccountHistoryEntry[]
   accountCostBob: number
   accountCostUsdt: number
   managedEmailId: string | null
@@ -700,25 +692,24 @@ export function SubscriptionActions({
               </section>
             ) : null}
             {subscription.serviceSlug === "chatgpt-private" ? (
-              <>
                 <div className="mt-4 rounded-lg border p-3 text-sm">
                   <div className="font-medium">Gasto del cliente</div>
                   <div>{money(subscription.accountCostBob, "BOB")} · {money(subscription.accountCostUsdt, "USDT")}</div>
                 </div>
-                <div className="mt-4 rounded-lg border p-3 text-sm">
-                  <div className="mb-2 font-medium">Historial de cuentas</div>
-                  <div className="grid gap-2">
-                    {subscription.accountHistory.map((history) => {
-                      return <div key={history.service_account_id + history.assigned_at} className="border-b pb-2 last:border-0">
-                        <div>{history.service_accounts?.label ?? history.service_account_id} · {history.duration_days} días</div>
-                        <div className="text-muted-foreground">Desde {formatDate(history.service_accounts?.created_at ?? history.assigned_at)}{history.ended_at ? ` hasta ${formatDate(history.ended_at)}` : " · actual"}</div>
-                        {history.blocked_at ? <div className="text-destructive">Bloqueada {formatDate(history.blocked_at)}{history.block_reason ? ` · ${history.block_reason}` : ""}</div> : null}
-                      </div>
-                    })}
-                  </div>
-                </div>
-              </>
             ) : null}
+            <div className="mt-4 rounded-lg border p-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="font-medium">Historial de cuentas</span>
+                <Link className="text-primary hover:underline" href={`/admin/customers/${subscription.customerId}/history`}>
+                  Ver todo el historial del cliente
+                </Link>
+              </div>
+              <AccountHistoryList
+                currentAccountId={subscription.serviceAccountId}
+                entries={subscription.accountHistory}
+                saleStatus={subscription.status}
+              />
+            </div>
           </div>
         </DialogContent>
       </Dialog>

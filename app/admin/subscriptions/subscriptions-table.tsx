@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
 
 import { SubscriptionActions } from "@/app/admin/subscriptions/subscription-actions"
+import type { AccountHistoryEntry } from "@/app/admin/subscriptions/account-history-list"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -60,17 +61,7 @@ export type SubscriptionRow = {
   renewalMessageSentAt: string | null
   renewalMessageDays: number | null
   hasPurchaseCost: boolean
-  accountHistory: Array<{
-    service_account_id: string
-    assigned_at: string
-    ended_at: string | null
-    blocked_at: string | null
-    block_reason: string | null
-    purchase_cost_bob: number
-    purchase_cost_usdt: number
-    duration_days: number
-    service_accounts: { label: string; created_at: string } | null
-  }>
+  accountHistory: AccountHistoryEntry[]
   accountCostBob: number
   accountCostUsdt: number
   managedEmailId: string | null

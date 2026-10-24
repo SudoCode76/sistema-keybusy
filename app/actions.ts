@@ -1692,27 +1692,13 @@ export async function replaceSubscriptionAccount(
   const today = new Date().toISOString().slice(0, 10)
   const { data: currentHistory } = await supabase
     .from("subscription_account_history")
-    .select("id, assigned_at, blocked_at")
+    .select("blocked_at")
     .eq("subscription_id", subscriptionId)
     .eq("service_account_id", oldAccountId)
     .is("ended_at", null)
     .maybeSingle()
   const blockedAt = currentHistory?.blocked_at?.slice(0, 10)
   const blockedDays = blockedAt ? calendarDaysBetween(blockedAt, today) : 0
-  await insertOrThrow(
-    supabase.from("subscription_account_history").update({ ended_at: today })
-      .eq("id", currentHistory?.id ?? "")
-  )
-  await insertOrThrow(
-    supabase.from("subscription_account_history").insert({
-      subscription_id: subscriptionId,
-      service_account_id: newAccount.id,
-      assigned_at: new Date().toISOString(),
-      purchase_cost_bob: values.bob,
-      purchase_cost_usdt: values.usdt,
-    })
-  )
-
   await insertOrThrow(
     supabase
       .from("subscriptions")
@@ -1723,6 +1709,14 @@ export async function replaceSubscriptionAccount(
           : {}),
       })
       .eq("id", subscriptionId)
+  )
+
+  await insertOrThrow(
+    supabase.from("subscription_account_history")
+      .update({ purchase_cost_bob: values.bob, purchase_cost_usdt: values.usdt })
+      .eq("subscription_id", subscriptionId)
+      .eq("service_account_id", newAccount.id)
+      .is("ended_at", null)
   )
 
   const { data: subscription } = await supabase
@@ -2271,13 +2265,13 @@ export async function createSale(
 
   if (!error && subscriptionId && productSlug === "chatgpt_private" && saleAccountId) {
     await insertOrThrow(
-      supabase.from("subscription_account_history").insert({
-        subscription_id: subscriptionId,
-        service_account_id: saleAccountId,
-        assigned_at: new Date().toISOString(),
+      supabase.from("subscription_account_history").update({
         purchase_cost_bob: individualCost?.amountBob ?? 0,
         purchase_cost_usdt: individualCost?.amountUsdt ?? 0,
       })
+        .eq("subscription_id", subscriptionId)
+        .eq("service_account_id", saleAccountId)
+        .is("ended_at", null)
     )
   }
 
