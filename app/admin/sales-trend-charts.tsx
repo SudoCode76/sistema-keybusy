@@ -36,6 +36,14 @@ type Slice = {
 function SalesPie({ label, slices }: { label: string; slices: Slice[] }) {
   const total = slices.reduce((sum, slice) => sum + slice.value, 0)
 
+  if (total === 0) {
+    return (
+      <div className="flex h-[280px] items-center justify-center rounded-xl border border-border/60 bg-muted/20 px-4 text-center text-sm text-muted-foreground" role="status">
+        Todavía no hay datos para esta comparación.
+      </div>
+    )
+  }
+
   return (
     <>
       <ChartContainer
@@ -145,6 +153,62 @@ export function SalesTrendCharts({ rows }: { rows: SalesTrendRow[] }) {
             label="Distribución de ventas nuevas y renovaciones este mes"
             slices={acquisitionSlices}
           />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export function RenewalComparisonCharts({
+  comparison,
+}: {
+  comparison: {
+    renewedCount: number
+    notRenewedCount: number
+    newSalesCount: number
+  } | null
+}) {
+  if (!comparison) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">
+          No se pudo cargar la comparación de renovaciones.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const renewalSlices = [
+    { key: "renewed", label: "Renovaron", value: comparison.renewedCount, color: "#f59e0b" },
+    { key: "not-renewed", label: "Aún no renovaron", value: comparison.notRenewedCount, color: "#fb7185" },
+  ]
+  const replacementSlices = [
+    renewalSlices[1],
+    { key: "new", label: "Ventas nuevas", value: comparison.newSalesCount, color: "#38bdf8" },
+  ]
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Card className="overflow-hidden border-white/8 bg-card/90">
+        <CardHeader>
+          <CardTitle>Renovaron y aún no renovaron</CardTitle>
+          <CardDescription>
+            Accesos pagados que vencían este mes, hasta hoy.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <SalesPie label="Proporción de accesos vencidos que renovaron y que aún no renovaron" slices={renewalSlices} />
+        </CardContent>
+      </Card>
+      <Card className="overflow-hidden border-white/8 bg-card/90">
+        <CardHeader>
+          <CardTitle>Sin renovar y ventas nuevas</CardTitle>
+          <CardDescription>
+            Comparación de cantidades del mes. Cada porcentaje usa solo la suma de estas dos categorías.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <SalesPie label="Proporción entre accesos sin renovar y ventas nuevas del mes" slices={replacementSlices} />
         </CardContent>
       </Card>
     </div>

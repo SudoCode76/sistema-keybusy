@@ -14,7 +14,7 @@ import { formatDate, formatDateTime } from "@/lib/date"
 import { money } from "@/lib/money"
 
 import { DashboardPendingRenewals } from "./dashboard-pending-renewals"
-import { SalesTrendCharts } from "./sales-trend-charts"
+import { RenewalComparisonCharts, SalesTrendCharts } from "./sales-trend-charts"
 import { boliviaToday } from "./subscriptions/mother-access"
 
 function one<T>(value: T | T[] | null): T | null {
@@ -67,6 +67,7 @@ export default async function AdminPage() {
     { data: renewals },
     { count: customers },
     { data: salesTrends },
+    { data: comparison, error: comparisonError },
     binanceRate,
   ] = await Promise.all([
     supabase.from("admin_dashboard_summary").select("*").maybeSingle(),
@@ -85,6 +86,7 @@ export default async function AdminPage() {
       .select("*")
       .order("day", { ascending: true })
       .order("service_name", { ascending: true }),
+    supabase.from("admin_monthly_renewal_comparison").select("*").maybeSingle(),
     rate,
   ])
 
@@ -223,6 +225,14 @@ export default async function AdminPage() {
       ) : null}
 
       <SalesTrendCharts rows={salesTrends ?? []} />
+
+      <RenewalComparisonCharts
+        comparison={comparisonError ? null : {
+          renewedCount: Number(comparison?.renewed_count ?? 0),
+          notRenewedCount: Number(comparison?.not_renewed_count ?? 0),
+          newSalesCount: Number(comparison?.new_sales_count ?? 0),
+        }}
+      />
 
       <DashboardPendingRenewals rows={pendingRenewalRows} today={today} />
     </>
