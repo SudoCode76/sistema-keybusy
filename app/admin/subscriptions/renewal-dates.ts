@@ -21,3 +21,8 @@ export function parseRenewalDate(value: string) {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
   return month >= 1 && month <= 12 && day >= 1 && day <= lastDay ? value : null
 }
+
+export function motherRenewalReminderCutoff(today: string) {
+  const [year, month, day] = today.split("-").map(Number)
+  return new Date(Date.UTC(year, month - 1, day + 2)).toISOString().slice(0, 10)
+}

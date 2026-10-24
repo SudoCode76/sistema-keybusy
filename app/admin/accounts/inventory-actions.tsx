@@ -3,11 +3,10 @@
 import {
   rotateSpotifyMotherAccount,
   demoteSpotifyMotherToMembers,
-  createCost,
   deleteServiceAccount,
   markAccountDead,
-  renewMotherAccount,
 } from "@/app/actions"
+import { AccountRenewalForm } from "@/app/admin/accounts/account-renewal-form"
 import { InventoryForm } from "@/app/admin/accounts/inventory-form"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -32,15 +31,12 @@ import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
 import { formatDate } from "@/lib/date"
 import Link from "next/link"
-import { nextRenewalSuggestion } from "@/app/admin/subscriptions/mother-access"
 import { CheckIcon, CopyIcon, MoreHorizontalIcon } from "lucide-react"
 import { useState } from "react"
 
@@ -582,58 +578,12 @@ export function InventoryActions({
               Registra el próximo pago y el costo de {account.label}. Esto no modifica las ventas de los clientes.
             </DialogDescription>
           </DialogHeader>
-          <DialogForm action={isMother ? renewMotherAccount : createCost}>
-            <FieldGroup>
-              <input type="hidden" name="service_account_id" value={account.id} />
-              <input type="hidden" name="provider_id" value={account.provider_id ?? "none"} />
-              <input type="hidden" name="cost_type" value="renewal" />
-              {isMother ? (
-                <Field>
-                  <FieldLabel htmlFor={`next_renewal_${account.id}`}>
-                    Próximo pago
-                  </FieldLabel>
-                  <Input
-                    defaultValue={nextRenewalSuggestion(
-                      account.renewal_due_on
-                    )}
-                    id={`next_renewal_${account.id}`}
-                    name="next_renewal_on"
-                    required
-                    type="date"
-                  />
-                </Field>
-              ) : null}
-              <div className="grid gap-3 md:grid-cols-3">
-                <Field>
-                  <FieldLabel htmlFor={`amount_${account.id}`}>Monto</FieldLabel>
-                  <Input id={`amount_${account.id}`} name="amount" type="number" step="0.01" required />
-                </Field>
-                <Field>
-                  <FieldLabel>Moneda</FieldLabel>
-                  <Select name="currency" defaultValue="USDT">
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="USDT">USDT</SelectItem>
-                        <SelectItem value="BOB">BOB</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`rate_${account.id}`}>Cambio</FieldLabel>
-                  <Input id={`rate_${account.id}`} name="exchange_rate" type="number" step="0.000001" />
-                </Field>
-              </div>
-              <Field>
-                <FieldLabel htmlFor={`notes_${account.id}`}>Notas</FieldLabel>
-                <Textarea id={`notes_${account.id}`} name="notes" />
-              </Field>
-              <FormSubmitButton pendingLabel="Guardando...">Guardar renovación</FormSubmitButton>
-            </FieldGroup>
-          </DialogForm>
+          <AccountRenewalForm
+            accountId={account.id}
+            isMother={isMother}
+            providerId={account.provider_id}
+            renewalDueOn={account.renewal_due_on}
+          />
         </DialogContent>
       </Dialog>
     </>

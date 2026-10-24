@@ -170,6 +170,106 @@ function parseSecretPayload(payload: string | null) {
   return values
 }
 
+export async function getMotherAccountDetails(accountId: string) {
+  const { supabase } = await requireAdmin()
+  if (!accountId.trim()) throw new Error("Cuenta madre no válida")
+
+  const { data: account, error: accountError } = await supabase
+    .from("service_accounts")
+    .select("id, label, login_email, username, renewal_due_on, services!inner(name, slug, account_model), email_addresses(email, email_password)")
+    .eq("id", accountId)
+    .maybeSingle()
+  if (accountError) throw accountError
+  const service = Array.isArray(account?.services) ? account.services[0] : account?.services
+  if (!account || service?.account_model !== "mother") {
+    throw new Error("No se encontró una cuenta madre")
+  }
+
+  const { data: credential, error: credentialError } = await supabase
+    .from("account_credentials")
+    .select("secret_payload")
+    .eq("service_account_id", accountId)
+    .maybeSingle()
+  if (credentialError) throw credentialError
+
+  const secrets = parseSecretPayload(credential?.secret_payload ?? null)
+  const linkedEmail = Array.isArray(account.email_addresses)
+    ? account.email_addresses[0]
+    : account.email_addresses
+  const members = new Map<string, {
+    id: string
+    name: string
+    email: string | null
+    endsOn: string | null
+  }>()
+
+  if (service.slug === "spotify") {
+    const { data, error } = await supabase
+      .from("spotify_member_accounts")
+      .select("id, login_email, member_name, status, current_subscription_id, current_subscription:subscriptions!spotify_member_accounts_current_subscription_id_fkey(status, ends_on, customers(display_name, email), subscription_access_details(login_email))")
+      .eq("service_account_id", accountId)
+      .eq("status", "assigned")
+      .not("current_subscription_id", "is", null)
+    if (error) throw error
+
+    for (const member of data ?? []) {
+      const sale = Array.isArray(member.current_subscription)
+        ? member.current_subscription[0]
+        : member.current_subscription
+      if (sale?.status !== "active") continue
+      const customer = Array.isArray(sale.customers) ? sale.customers[0] : sale.customers
+      const access = Array.isArray(sale.subscription_access_details)
+        ? sale.subscription_access_details[0]
+        : sale.subscription_access_details
+      const email = access?.login_email ?? member.login_email ?? customer?.email ?? null
+      const key = email?.trim().toLowerCase() || member.id
+      if (!members.has(key)) members.set(key, {
+        id: member.id,
+        name: member.member_name ?? customer?.display_name ?? "Miembro Spotify",
+        email,
+        endsOn: sale.ends_on,
+      })
+    }
+  } else {
+    const { data, error } = await supabase
+      .from("subscriptions")
+      .select("id, slot_label, ends_on, products(slug), customers(display_name, email), subscription_access_details(login_email)")
+      .eq("service_account_id", accountId)
+      .eq("status", "active")
+    if (error) throw error
+
+    for (const sale of data ?? []) {
+      const product = Array.isArray(sale.products) ? sale.products[0] : sale.products
+      if (product?.slug === "spotify_family_member") continue
+      const customer = Array.isArray(sale.customers) ? sale.customers[0] : sale.customers
+      const access = Array.isArray(sale.subscription_access_details)
+        ? sale.subscription_access_details[0]
+        : sale.subscription_access_details
+      const email = access?.login_email ?? customer?.email ?? null
+      const key = email?.trim().toLowerCase() || sale.id
+      if (!members.has(key)) members.set(key, {
+        id: sale.id,
+        name: customer?.display_name ?? sale.slot_label ?? "Miembro",
+        email,
+        endsOn: sale.ends_on,
+      })
+    }
+  }
+
+  return {
+    account: {
+      id: account.id,
+      label: account.label,
+      email: account.login_email ?? linkedEmail?.email ?? account.username,
+      platformPassword: secrets.platform_password ?? secrets.password ?? null,
+      emailPassword: secrets.email_password ?? linkedEmail?.email_password ?? null,
+      serviceName: service.name,
+      renewalDueOn: account.renewal_due_on,
+    },
+    members: [...members.values()],
+  }
+}
+
 function mergeSecretPayload(
   payload: string | null,
   updates: Record<string, string | null>
