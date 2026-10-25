@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useState, useSyncExternalStore } from "react"
+import { Fragment, useEffect, useState } from "react"
 import Link from "next/link"
 import {
   AlertTriangleIcon,
@@ -30,16 +30,6 @@ import {
 import { formatDate } from "@/lib/date"
 
 const dismissedKey = "mother-renewal-reminder-dismissed"
-const dismissedEvent = "mother-renewal-reminder-dismissed-change"
-
-function subscribe(callback: () => void) {
-  window.addEventListener(dismissedEvent, callback)
-  return () => window.removeEventListener(dismissedEvent, callback)
-}
-
-function isReminderOpen() {
-  return sessionStorage.getItem(dismissedKey) !== "1"
-}
 
 type Reminder = {
   id: string
@@ -58,7 +48,7 @@ export function MotherRenewalReminder({
   reminders: Reminder[]
   today: string
 }) {
-  const open = useSyncExternalStore(subscribe, isReminderOpen, () => true)
+  const [open, setOpen] = useState(false)
   const [detailsId, setDetailsId] = useState<string | null>(null)
   const [details, setDetails] = useState<AccountDetails | null>(null)
   const [detailsLoading, setDetailsLoading] = useState(false)
@@ -66,11 +56,15 @@ export function MotherRenewalReminder({
   const [copied, setCopied] = useState("")
   const [renewalId, setRenewalId] = useState<string | null>(null)
 
+  useEffect(() => {
+    setOpen(sessionStorage.getItem(dismissedKey) !== "1")
+  }, [])
+
   if (!reminders.length) return null
 
   function dismiss() {
     sessionStorage.setItem(dismissedKey, "1")
-    window.dispatchEvent(new Event(dismissedEvent))
+    setOpen(false)
   }
 
   async function showDetails(id: string) {
