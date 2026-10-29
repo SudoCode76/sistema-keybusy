@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useState } from "react"
+import { useActionState, useState, useSyncExternalStore } from "react"
 import { MessageCircleIcon, RotateCcwIcon, XCircleIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
 
@@ -49,6 +49,21 @@ type PendingRenewal = RenewalFormValues & {
   accountEmail: string | null
   purchaseMode: string | null
   allowAccountReuseOnCancel: boolean
+}
+
+const lastOpenedContactKey = "dashboard-last-opened-contact"
+
+function subscribeToLastOpenedContact(onChange: () => void) {
+  window.addEventListener(lastOpenedContactKey, onChange)
+  return () => window.removeEventListener(lastOpenedContactKey, onChange)
+}
+
+function getLastOpenedContact() {
+  return sessionStorage.getItem(lastOpenedContactKey)
+}
+
+function getServerLastOpenedContact() {
+  return null
 }
 
 function CancelRenewalButton({ item }: { item: PendingRenewal }) {
@@ -148,6 +163,12 @@ export function DashboardPendingRenewals({
   rows: PendingRenewal[]
   today: string
 }) {
+  const lastOpenedId = useSyncExternalStore(
+    subscribeToLastOpenedContact,
+    getLastOpenedContact,
+    getServerLastOpenedContact
+  )
+
   return (
     <Card>
       <CardHeader>
@@ -177,7 +198,10 @@ export function DashboardPendingRenewals({
               const overdue = item.endsOn < today
 
               return (
-                <TableRow key={item.id}>
+                <TableRow
+                  key={item.id}
+                  data-state={lastOpenedId === item.id ? "selected" : undefined}
+                >
                   <TableCell>{item.customerName}</TableCell>
                   <TableCell>{item.productName}</TableCell>
                   <TableCell>{item.accountLabel ?? "-"}</TableCell>
@@ -192,10 +216,24 @@ export function DashboardPendingRenewals({
                   </TableCell>
                   <TableCell>
                     {whatsapp ? (
-                      <a className={buttonVariants({ size: "sm" })} href={whatsapp} rel="noreferrer" target="_blank">
-                        <MessageCircleIcon data-icon="inline-start" />
-                        Contactar
-                      </a>
+                      <div className="flex flex-col items-start gap-1">
+                        <a
+                          className={buttonVariants({ size: "sm" })}
+                          href={whatsapp}
+                          onClick={() => {
+                            sessionStorage.setItem(lastOpenedContactKey, item.id)
+                            window.dispatchEvent(new Event(lastOpenedContactKey))
+                          }}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <MessageCircleIcon data-icon="inline-start" />
+                          Contactar
+                        </a>
+                        {lastOpenedId === item.id ? (
+                          <Badge variant="outline">Último abierto</Badge>
+                        ) : null}
+                      </div>
                     ) : <span className="text-sm text-muted-foreground">Sin teléfono</span>}
                   </TableCell>
                   <TableCell className="text-right">
