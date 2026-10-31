@@ -116,6 +116,7 @@ export function SpotifyMemberActions({
   const [pendingAssignOpen, setPendingAssignOpen] = useState(false)
   const [replenishOpen, setReplenishOpen] = useState(false)
   const [targetAccountId, setTargetAccountId] = useState("")
+  const [editTargetAccountId, setEditTargetAccountId] = useState("")
   const [pendingTargetAccountId, setPendingTargetAccountId] = useState("")
   const [editState, editAction] = useActionState(
     async (previousState: { error?: string }, formData: FormData) => {
@@ -208,6 +209,12 @@ export function SpotifyMemberActions({
   const availableTargetPlans = targetPlans.filter(
     (plan) => plan.id !== accountId
   )
+  const currentEditPlan = targetPlans.find((plan) => plan.id === accountId)
+  const canChangeEditPlan = Boolean(
+    member.status === "assigned" &&
+      member.currentSubscriptionId &&
+      member.hasActiveSale
+  )
   const selectedTargetPlan = availableTargetPlans.find(
     (plan) => plan.id === targetAccountId
   )
@@ -249,7 +256,12 @@ export function SpotifyMemberActions({
             </DropdownMenuItem>
             {member.status !== "removed" ? (
               <>
-                <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setEditTargetAccountId(accountId)
+                    setEditOpen(true)
+                  }}
+                >
                   Editar miembro
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setNameOpen(true)}>
@@ -642,12 +654,53 @@ export function SpotifyMemberActions({
           <DialogHeader>
             <DialogTitle>Editar miembro Spotify</DialogTitle>
             <DialogDescription>
-              Si cambias el correo, el anterior conservará su historial y el nuevo quedará como acceso activo.
+              Si cambias el correo, el anterior conservará su historial y el nuevo quedará como acceso activo. También puedes cambiar el plan familiar.
             </DialogDescription>
           </DialogHeader>
           <form action={editAction}>
             <FieldGroup>
               <input name="member_id" type="hidden" value={member.id} />
+              {canChangeEditPlan ? (
+                <>
+                  <input name="subscription_id" type="hidden" value={member.currentSubscriptionId ?? ""} />
+                  <input name="expected_current_service_account_id" type="hidden" value={accountId} />
+                  <input name="target_service_account_id" type="hidden" value={editTargetAccountId || accountId} />
+                  <Field>
+                    <FieldLabel htmlFor={`spotify_edit_plan_${member.id}`}>Plan familiar</FieldLabel>
+                    <Select
+                      value={editTargetAccountId || accountId}
+                      onValueChange={(value) => setEditTargetAccountId(value ?? "")}
+                    >
+                      <SelectTrigger id={`spotify_edit_plan_${member.id}`}>
+                        <SelectValue placeholder="Selecciona un plan familiar" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={accountId}>
+                          <span className="flex min-w-0 flex-col items-start">
+                            <span>{currentEditPlan?.label || member.serviceAccountLabel} · {currentEditPlan ? `${currentEditPlan.seatsUsed}/${currentEditPlan.seatsTotal}` : "Plan actual"}</span>
+                            <span className="max-w-full truncate text-xs text-muted-foreground">{currentPlanEmail || "Correo no configurado"} · Actual</span>
+                          </span>
+                        </SelectItem>
+                        {availableTargetPlans.map((plan) => {
+                          const isFull = plan.seatsUsed >= plan.seatsTotal
+                          const isUnavailable = plan.isOverdue || isFull
+                          return (
+                            <SelectItem disabled={isUnavailable} key={plan.id} value={plan.id}>
+                              <span className="flex min-w-0 flex-col items-start">
+                                <span>{plan.label || "Plan Spotify"} · {plan.seatsUsed}/{plan.seatsTotal}</span>
+                                <span className="max-w-full truncate text-xs text-muted-foreground">
+                                  {plan.loginEmail || "Correo no configurado"}
+                                  {plan.isOverdue ? " · Vencido" : isFull ? " · Lleno" : ""}
+                                </span>
+                              </span>
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </>
+              ) : null}
               <Field>
                 <FieldLabel htmlFor={`spotify_edit_email_${member.id}`}>Correo de la cuenta</FieldLabel>
                 <Input

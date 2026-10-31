@@ -1955,10 +1955,6 @@ export async function createSale(
     }
   }
 
-  if (duplicateCheck.privateAccount && !existingAccountId) {
-    return privateAccountState(duplicateCheck)
-  }
-
   const activeDuplicate = duplicateCheck.matchingSales.find(
     (sale) => sale.status === "active"
   )
@@ -1984,6 +1980,17 @@ export async function createSale(
         kind: "expired_sale",
         message: `El contacto ${duplicateCheck.customer?.contact ?? (phone || `@${telegramUsername}`)} ya tiene ${duplicateCheck.target.serviceName} vencido. Renueva el acceso existente.`,
       },
+    }
+  }
+
+  if (duplicateCheck.privateAccount && !existingAccountId) {
+    if (duplicateCheck.privateAccount.status !== "inactive") {
+      return privateAccountState(duplicateCheck)
+    }
+    if (!duplicateCheck.customer?.id || !accountEmail) {
+      return {
+        error: "No se pudo confirmar el cliente para recuperar la cuenta inactiva.",
+      }
     }
   }
 
@@ -2102,22 +2109,11 @@ export async function createSale(
   }
 
   let automaticExchangeRate: number
+  let automaticExchangeAds: Awaited<ReturnType<typeof fetchBinanceAverage>>["ads"]
   try {
     const result = await fetchBinanceAverage("BUY")
     automaticExchangeRate = result.average
-
-    const { error: snapshotError } = await supabase
-      .from("exchange_rate_snapshots")
-      .insert({
-        trade_type: "BUY",
-        rows_requested: 20,
-        average_price: result.average,
-        raw_ads: result.ads,
-      })
-
-    if (snapshotError) {
-      return { error: snapshotError.message }
-    }
+    automaticExchangeAds = result.ads
   } catch (error) {
     return {
       error:
@@ -2126,6 +2122,57 @@ export async function createSale(
           : "No se pudo obtener el tipo de cambio",
     }
   }
+
+  if (duplicateCheck.privateAccount && !existingAccountId) {
+    const customerId = duplicateCheck.customer?.id
+    const normalizedEmail = accountEmail?.trim().toLowerCase()
+    if (!customerId || !normalizedEmail) {
+      return {
+        error: "No se pudo confirmar el cliente para recuperar la cuenta inactiva.",
+      }
+    }
+    if (!parseRenewalDate(startsOn)) {
+      return { error: "Inicio no es válido" }
+    }
+
+    const { data: renewedSubscriptionId, error: renewalError } =
+      await supabase.rpc("renew_canceled_sale", {
+        p_customer_id: customerId,
+        p_product_slug: productSlug,
+        p_email: normalizedEmail,
+        p_starts_on: startsOn,
+        p_duration_months: formNumber(formData.get("duration_months"), 1),
+        p_price_amount: priceAmount ? formNumber(priceAmount) : null,
+        p_price_currency: currency(formData.get("current_price_currency")),
+        p_exchange_rate: automaticExchangeRate,
+      })
+
+    if (renewalError) return { error: renewalError.message }
+    if (!renewedSubscriptionId) {
+      return { error: "No se pudo recuperar la venta cancelada." }
+    }
+
+    revalidatePath("/admin")
+    revalidateAccountPages()
+    revalidatePath("/admin/subscriptions")
+    revalidatePath("/admin/emails")
+    revalidatePath("/admin/payments")
+    revalidatePath("/admin/costs")
+    revalidatePath("/portal")
+
+    return { message: "Renovación guardada correctamente." }
+  }
+
+  const { error: snapshotError } = await supabase
+    .from("exchange_rate_snapshots")
+    .insert({
+      trade_type: "BUY",
+      rows_requested: 20,
+      average_price: automaticExchangeRate,
+      raw_ads: automaticExchangeAds,
+    })
+
+  if (snapshotError) return { error: snapshotError.message }
 
   if (!saleAccountId && product.purchase_mode === "individual") {
     const purchaseAmountText = formText(formData.get("purchase_amount"))
@@ -2771,14 +2818,30 @@ export async function updateSpotifyMember(formData: FormData) {
   const emailPassword = formText(formData.get("email_password"))
   const profileLabel = formText(formData.get("profile_label"))
 
-  const { error } = await supabase.rpc("update_spotify_member_credentials", {
-    p_member_id: id,
-    p_login_email: loginEmail,
-    p_login_password: loginPassword,
-    p_email_password: emailPassword,
-    p_member_name: memberName,
-    p_profile_label: profileLabel,
-  })
+  const targetAccountId = formText(formData.get("target_service_account_id"))
+  const { error } = targetAccountId
+    ? await supabase.rpc("edit_spotify_member_plan", {
+        p_member_id: id,
+        p_subscription_id: requireValue(formData.get("subscription_id"), "Venta"),
+        p_expected_current_service_account_id: requireValue(
+          formData.get("expected_current_service_account_id"),
+          "Plan actual"
+        ),
+        p_target_service_account_id: targetAccountId,
+        p_login_email: loginEmail,
+        p_login_password: loginPassword,
+        p_email_password: emailPassword,
+        p_member_name: memberName,
+        p_profile_label: profileLabel,
+      })
+    : await supabase.rpc("update_spotify_member_credentials", {
+        p_member_id: id,
+        p_login_email: loginEmail,
+        p_login_password: loginPassword,
+        p_email_password: emailPassword,
+        p_member_name: memberName,
+        p_profile_label: profileLabel,
+      })
   if (error) throw new Error(error.message)
 
   revalidatePath("/admin/accounts")
