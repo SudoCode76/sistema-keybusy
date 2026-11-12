@@ -23,3 +23,13 @@ test("no muestra clientes de miembros como titulares de la cuenta madre", () => 
 test("deja vacía la fila de cuenta madre sin ventas asignadas", () => {
   assert.equal(findAccountCustomerSale(true, []), null)
 })
+
+test("conserva el cliente de una cuenta personal sin exigir un cupo Titular", () => {
+  const privateSale = {
+    slot_label: null,
+    products: { slug: "chatgpt_private" },
+  }
+
+  assert.equal(findAccountCustomerSale(false, [privateSale]), privateSale)
+  assert.equal(findAccountCustomerSale(false, []), null)
+})

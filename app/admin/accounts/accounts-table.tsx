@@ -640,11 +640,11 @@ export function AccountsTable({
                         <div className="mt-0.5 flex items-center gap-1 text-xs">
                           <CopyCredential label="Cliente" query={query} value={account.accountCustomerPhone} />
                         </div>
-                      ) : !isMother ? (
+                      ) : (
                         <span className="mt-0.5 text-[11px] text-muted-foreground italic">
-                          Sin cliente asignado
+                          {isMother ? "Cuenta madre sin asignar a cliente" : "Sin cliente asignado"}
                         </span>
-                      ) : null}
+                      )}
                     </div>
                   </TableCell>
                 ) : null}
