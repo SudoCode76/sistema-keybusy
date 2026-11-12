@@ -2,6 +2,7 @@ export type AccountSearchRecord = {
   label: string | null
   login_email: string | null
   username: string | null
+  accountCustomerPhone?: string | null
 }
 
 export type AccountChildSearchRecord = {
@@ -24,7 +25,9 @@ export function normalizeAccountSearch(value: string | null | undefined) {
 
 export function accountSearchText(account: AccountSearchRecord) {
   return normalizeAccountSearch(
-    [account.label, account.login_email, account.username].filter(Boolean).join(" ")
+    [account.label, account.login_email, account.username, account.accountCustomerPhone]
+      .filter(Boolean)
+      .join(" ")
   )
 }
 

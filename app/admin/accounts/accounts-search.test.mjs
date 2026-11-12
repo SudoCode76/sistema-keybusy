@@ -36,6 +36,10 @@ test("encuentra el plan por datos de la cuenta o del miembro", () => {
   assert.equal(accountMatchesSearch(account, children, "plan inexistente"), false)
 })
 
+test("encuentra una cuenta por el cliente asignado a su fila principal", () => {
+  assert.equal(accountRecordMatchesSearch({ ...account, accountCustomerPhone: "+59170408977" }, "70408977"), true)
+})
+
 test("una consulta vacía conserva todas las cuentas", () => {
   assert.equal(accountMatchesSearch(account, children, "   "), true)
 })

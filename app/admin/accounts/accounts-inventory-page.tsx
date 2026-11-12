@@ -1,5 +1,6 @@
 import { InventoryForm } from "@/app/admin/accounts/inventory-form"
 import { AccountsTable } from "@/app/admin/accounts/accounts-table"
+import { findAccountCustomerSale } from "@/app/admin/accounts/account-customer-sale"
 import { buttonVariants } from "@/components/ui/button"
 import {
   Card,
@@ -234,23 +235,7 @@ export async function AccountsInventoryPage({
       (sale) => sale.service_account_id === account.id
     )
     // 2. Spotify members
-    const spotifyMembersForAccount = (spotifyMembers ?? []).filter(
-      (member) =>
-        member.service_account_id === account.id &&
-        member.current_subscription_id &&
-        one(member.current_subscription)?.status === "active"
-    )
-
-    // Find the single customer who owns/is assigned to this mother or private account
-    // 1. Look for a sale explicitly marked as 'Titular'
-    const titularSale = directSalesForAccount.find((sale) => sale.slot_label === "Titular")
-    
-    // 2. Or a direct sale to the mother account without a separate spotify_member_account
-    const directMotherSale = directSalesForAccount.find(
-      (sale) => !sale.spotify_member_account_id
-    )
-
-    const targetSale = titularSale ?? directMotherSale ?? directSalesForAccount[0] ?? null
+    const targetSale = findAccountCustomerSale(accountModel === "mother", directSalesForAccount)
     const targetCustomer = targetSale ? one(targetSale.customers) : null
     const accountCustomerPhone =
       targetCustomer?.phone_e164 ||
