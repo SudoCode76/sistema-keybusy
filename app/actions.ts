@@ -1230,6 +1230,40 @@ export async function deleteEmailWithRelations(formData: FormData) {
   return { message: "Correo y sus plataformas asociadas eliminados correctamente." }
 }
 
+export async function saveEmailPersonalPlatform(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const emailAddressId = requireValue(formData.get("email_address_id"), "Correo")
+  const name = requireValue(formData.get("name"), "Plataforma")
+  const notes = formText(formData.get("notes"))
+  const password = formText(formData.get("password"))
+  if (name.length > 80) throw new Error("El nombre de la plataforma no puede superar los 80 caracteres")
+  if (notes && notes.length > 1000) throw new Error("La nota no puede superar los 1000 caracteres")
+  if (password && password.length > 1000) throw new Error("La contraseña no puede superar los 1000 caracteres")
+  const { data, error } = await supabase.rpc("save_email_personal_platform", {
+    p_email_address_id: emailAddressId,
+    p_name: name,
+    p_notes: notes,
+    p_password: password,
+  })
+  if (error) throw new Error(error.message)
+  revalidatePath("/admin/email-history")
+  return data?.[0] ?? null
+}
+
+export async function removeEmailPersonalPlatform(formData: FormData) {
+  const { supabase } = await requireAdmin()
+  const emailAddressId = requireValue(formData.get("email_address_id"), "Correo")
+  const platformId = requireValue(formData.get("platform_id"), "Plataforma")
+  const { error } = await supabase
+    .from("email_personal_platforms")
+    .delete()
+    .eq("email_address_id", emailAddressId)
+    .eq("personal_platform_id", platformId)
+  if (error) throw new Error(error.message)
+  revalidatePath("/admin/email-history")
+  return { platformId }
+}
+
 export async function createServiceAccount(formData: FormData) {
   const { supabase } = await requireAdmin()
   const amount = formNumber(formData.get("base_cost_amount"))

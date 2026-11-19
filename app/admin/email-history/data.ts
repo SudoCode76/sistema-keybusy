@@ -55,7 +55,10 @@ export type EmailHistoryEntry = {
   platforms: PlatformUsageDetail[]
   familyPlans: FamilyPlanHistoryItem[]
   lastEndedAt: string | null
+  personalPlatforms: { id: string; name: string; notes: string | null; password: string | null }[]
 }
+
+export type PersonalPlatformOption = { id: string; name: string }
 
 export async function getEmailHistoryData(
   supabase: ServerClient
@@ -65,6 +68,7 @@ export async function getEmailHistoryData(
     { data: usages, error: usagesError },
     { data: spotifyMembers, error: membersError },
     { data: serviceAccounts, error: accountsError },
+    { data: emailPersonalPlatforms, error: emailPersonalPlatformsError },
   ] = await Promise.all([
     supabase
       .from("email_addresses")
@@ -86,12 +90,25 @@ export async function getEmailHistoryData(
       .from("service_accounts")
       .select("id, email_address_id, label, login_email, username, status, started_at, dead_at, services(name, slug), account_credentials(secret_payload)")
       .order("created_at", { ascending: false }),
+    supabase
+      .from("email_personal_platforms")
+      .select("email_address_id, notes, platform_password, personal_platforms(id, name)"),
   ])
 
   if (emailsError) throw emailsError
   if (usagesError) throw usagesError
   if (membersError) throw membersError
   if (accountsError) throw accountsError
+  if (emailPersonalPlatformsError) throw emailPersonalPlatformsError
+
+  const personalPlatformsByEmailId = new Map<string, EmailHistoryEntry["personalPlatforms"]>()
+  for (const assignment of emailPersonalPlatforms ?? []) {
+    const platform = one(assignment.personal_platforms)
+    if (!platform) continue
+    const platforms = personalPlatformsByEmailId.get(assignment.email_address_id) ?? []
+    platforms.push({ id: platform.id, name: platform.name, notes: text(assignment.notes), password: assignment.platform_password })
+    personalPlatformsByEmailId.set(assignment.email_address_id, platforms)
+  }
 
   // Index usages by email_address_id
   const usagesByEmailId = new Map<string, typeof usages>()
@@ -330,6 +347,7 @@ export async function getEmailHistoryData(
         platforms: platformDetails,
         familyPlans: familyPlanHistory,
         lastEndedAt,
+        personalPlatforms: personalPlatformsByEmailId.get(emailItem.id) ?? [],
       })
     }
   }
@@ -340,4 +358,15 @@ export async function getEmailHistoryData(
     const right = b.lastEndedAt ? Date.parse(b.lastEndedAt) : 0
     return right - left
   })
+}
+
+export async function getPersonalPlatformOptions(
+  supabase: ServerClient
+): Promise<PersonalPlatformOption[]> {
+  const { data, error } = await supabase
+    .from("personal_platforms")
+    .select("id, name")
+    .order("name")
+  if (error) throw error
+  return data ?? []
 }

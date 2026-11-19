@@ -8,6 +8,7 @@ import {
   KeyRoundIcon,
   MailIcon,
   PlusCircleIcon,
+  SlidersHorizontalIcon,
   SearchIcon,
   ShieldAlertIcon,
   Trash2Icon,
@@ -19,6 +20,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Table,
   TableBody,
   TableCell,
@@ -29,9 +37,10 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDate } from "@/lib/date"
 
-import type { EmailHistoryEntry } from "./data"
+import type { EmailHistoryEntry, PersonalPlatformOption } from "./data"
 import { EmailHistoryDeleteDialog } from "./email-history-delete-dialog"
 import { EmailHistoryDetailDialog } from "./email-history-dialog"
+import { PersonalPlatformDialog } from "./personal-platform-dialog"
 
 function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false)
@@ -60,13 +69,18 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 export function EmailHistoryTable({
   initialEntries,
+  initialPersonalPlatformOptions,
 }: {
   initialEntries: EmailHistoryEntry[]
+  initialPersonalPlatformOptions: PersonalPlatformOption[]
 }) {
   const [deletedIds, setDeletedIds] = useState<string[]>([])
+  const [personalPlatformOverrides, setPersonalPlatformOverrides] = useState<Record<string, EmailHistoryEntry["personalPlatforms"]>>({})
   const entries = useMemo(
-    () => initialEntries.filter((entry) => !deletedIds.includes(entry.id)),
-    [initialEntries, deletedIds]
+    () => initialEntries
+      .filter((entry) => !deletedIds.includes(entry.id))
+      .map((entry) => personalPlatformOverrides[entry.id] ? { ...entry, personalPlatforms: personalPlatformOverrides[entry.id] } : entry),
+    [initialEntries, deletedIds, personalPlatformOverrides]
   )
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<"all" | "free" | "mixed">("all")
@@ -74,6 +88,19 @@ export function EmailHistoryTable({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteEntry, setDeleteEntry] = useState<EmailHistoryEntry | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [personalEntry, setPersonalEntry] = useState<EmailHistoryEntry | null>(null)
+  const [personalDialogOpen, setPersonalDialogOpen] = useState(false)
+  const [personalPlatformFilter, setPersonalPlatformFilter] = useState("")
+  const [domainFilter, setDomainFilter] = useState("")
+
+  const domains = useMemo(
+    () => Array.from(new Set(entries.map((entry) => entry.email.split("@").pop()?.toLowerCase() ?? ""))).filter(Boolean).sort(),
+    [entries]
+  )
+  const personalPlatforms = useMemo(
+    () => Array.from(new Map(entries.flatMap((entry) => entry.personalPlatforms).map((platform) => [platform.id, platform.name])).entries()).map(([id, name]) => ({ id, name })),
+    [entries]
+  )
 
   const filteredEntries = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -81,6 +108,12 @@ export function EmailHistoryTable({
       // Filter tab
       if (filter === "free" && item.hasActivePlatforms) return false
       if (filter === "mixed" && !item.hasActivePlatforms) return false
+
+      if (personalPlatformFilter === "none" && item.personalPlatforms.length) return false
+      if (personalPlatformFilter && personalPlatformFilter !== "none" && !item.personalPlatforms.some((platform) => platform.id === personalPlatformFilter)) return false
+      const domain = item.email.split("@").pop()?.toLowerCase() ?? ""
+      if (domainFilter === "outlook" && !["outlook.com", "outlook.es"].includes(domain)) return false
+      if (domainFilter && domainFilter !== "outlook" && domain !== domainFilter) return false
 
       if (!q) return true
 
@@ -99,10 +132,13 @@ export function EmailHistoryTable({
           (f.memberName?.toLowerCase().includes(q) ?? false) ||
           (f.customerName?.toLowerCase().includes(q) ?? false)
       )
+      const matchesPersonal = item.personalPlatforms.some(
+        (platform) => platform.name.toLowerCase().includes(q) || (platform.notes?.toLowerCase().includes(q) ?? false)
+      )
 
-      return matchesEmail || matchesProvider || matchesPlatforms || matchesFamily
+      return matchesEmail || matchesProvider || matchesPlatforms || matchesFamily || matchesPersonal
     })
-  }, [entries, query, filter])
+  }, [entries, query, filter, personalPlatformFilter, domainFilter])
 
   const openDetail = (entry: EmailHistoryEntry) => {
     setSelectedEntry(entry)
@@ -119,10 +155,18 @@ export function EmailHistoryTable({
     setDeletedIds((prev) => [...prev, deletedId])
   }
 
+  const clearFilters = () => {
+    setQuery("")
+    setFilter("all")
+    setPersonalPlatformFilter("")
+    setDomainFilter("")
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Search & Tabs */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-sm">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
@@ -149,6 +193,28 @@ export function EmailHistoryTable({
             </TabsTrigger>
           </TabsList>
         </Tabs>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2">
+            <Select value={personalPlatformFilter || null} onValueChange={(value) => setPersonalPlatformFilter(value ?? "")}>
+            <SelectTrigger className="w-full sm:w-56" aria-label="Filtrar por plataforma personal"><SelectValue placeholder="Todas las plataformas personales" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sin uso personal</SelectItem>
+              {personalPlatforms.map((platform) => <SelectItem key={platform.id} value={platform.id}>{platform.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={domainFilter || null} onValueChange={(value) => setDomainFilter(value ?? "")}>
+            <SelectTrigger className="w-full sm:w-52" aria-label="Filtrar por dominio"><SelectValue placeholder="Todos los dominios" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="outlook">Outlook (.com y .es)</SelectItem>
+              {domains.map((domain) => <SelectItem key={domain} value={domain}>@{domain}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {(query || filter !== "all" || personalPlatformFilter || domainFilter) && (
+            <Button type="button" variant="ghost" size="sm" onClick={clearFilters} className="self-start">
+              <SlidersHorizontalIcon /> Limpiar filtros
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Main Table */}
@@ -239,6 +305,11 @@ export function EmailHistoryTable({
                             </Badge>
                           )
                         })}
+                        {item.personalPlatforms.map((platform) => (
+                          <Badge key={`personal:${platform.id}`} variant="secondary" className="text-[11px] py-0 px-2" title={platform.notes ?? undefined}>
+                            {platform.name} · Personal
+                          </Badge>
+                        ))}
                       </div>
                     </TableCell>
 
@@ -270,6 +341,9 @@ export function EmailHistoryTable({
                     {/* Acciones */}
                     <TableCell className="align-top text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
+                        <Button type="button" variant="outline" size="xs" onClick={(event) => { event.stopPropagation(); setPersonalEntry(item); setPersonalDialogOpen(true) }} className="text-xs">
+                          Uso personal
+                        </Button>
                         <Button
                           type="button"
                           variant="outline"
@@ -328,6 +402,17 @@ export function EmailHistoryTable({
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         onDeleted={handleDeleted}
+      />
+      <PersonalPlatformDialog
+        entry={personalEntry}
+        options={initialPersonalPlatformOptions}
+        open={personalDialogOpen}
+        onOpenChange={setPersonalDialogOpen}
+        onPlatformsChange={(platforms) => {
+          if (!personalEntry) return
+          setPersonalPlatformOverrides((current) => ({ ...current, [personalEntry.id]: platforms }))
+          setPersonalEntry({ ...personalEntry, personalPlatforms: platforms })
+        }}
       />
     </div>
   )

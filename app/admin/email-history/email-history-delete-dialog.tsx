@@ -36,8 +36,6 @@ export function EmailHistoryDeleteDialog({
   if (!emailEntry) return null
 
   const activePlatforms = emailEntry.platforms.filter((p) => p.status === "active")
-  const inactivePlatforms = emailEntry.platforms.filter((p) => p.status === "inactive")
-
   const handleDelete = () => {
     startTransition(async () => {
       try {
@@ -87,6 +85,9 @@ export function EmailHistoryDeleteDialog({
               los registros históricos y usos que tuvo asociados.
             </p>
           )}
+          <p className="text-xs text-muted-foreground">
+            También se eliminarán las contraseñas, notas y asociaciones de uso personal de este correo. El catálogo de plataformas se conservará.
+          </p>
 
           {/* Resumen de plataformas a eliminar */}
           <div className="rounded-xl border bg-muted/30 p-3 space-y-3">

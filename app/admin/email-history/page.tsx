@@ -7,12 +7,15 @@ import {
 } from "@/components/ui/card"
 import { requireAdmin } from "@/lib/auth"
 
-import { getEmailHistoryData } from "./data"
+import { getEmailHistoryData, getPersonalPlatformOptions } from "./data"
 import { EmailHistoryTable } from "./email-history-table"
 
 export default async function EmailHistoryPage() {
   const { supabase } = await requireAdmin()
-  const entries = await getEmailHistoryData(supabase)
+  const [entries, personalPlatformOptions] = await Promise.all([
+    getEmailHistoryData(supabase),
+    getPersonalPlatformOptions(supabase),
+  ])
 
   const fullyFreeCount = entries.filter((e) => !e.hasActivePlatforms).length
   const mixedCount = entries.filter((e) => e.hasActivePlatforms).length
@@ -39,7 +42,7 @@ export default async function EmailHistoryPage() {
         </div>
       </CardHeader>
       <CardContent>
-        <EmailHistoryTable initialEntries={entries} />
+        <EmailHistoryTable initialEntries={entries} initialPersonalPlatformOptions={personalPlatformOptions} />
       </CardContent>
     </Card>
   )
